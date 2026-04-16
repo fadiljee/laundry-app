@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OrderListPage extends StatefulWidget {
   const OrderListPage({super.key});
@@ -7,156 +9,336 @@ class OrderListPage extends StatefulWidget {
   State<OrderListPage> createState() => _OrderListPageState();
 }
 
-class _OrderListPageState extends State<OrderListPage> {
-  // Data Dummy untuk List Pesanan
-  final List<Map<String, dynamic>> _dummyOrders = [
-    {
-      "id": "LYR-001",
-      "customer": "Fadil",
-      "status": "Menunggu Pembayaran",
-      "total": "Rp 35.000",
-      "service": "Cuci Kering",
-      "isVerified": false,
-    },
-    {
-      "id": "LYR-002",
-      "customer": "Budi",
-      "status": "Sedang Dicuci",
-      "total": "Rp 50.000",
-      "service": "Cuci Setrika",
-      "isVerified": true,
-    },
-    {
-      "id": "LYR-003",
-      "customer": "Siska",
-      "status": "Selesai",
-      "total": "Rp 25.000",
-      "service": "Setrika Saja",
-      "isVerified": true,
-    },
-  ];
+class _OrderListPageState extends State<OrderListPage>
+    with SingleTickerProviderStateMixin {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  late AnimationController _animController;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOutCubic,
+    ));
+    _animController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        title: const Text("Daftar Pesanan"),
-        actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.filter_list_rounded))
-        ],
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Color(0xFFF1F5F9)),
+        title: const Text(
+          "Daftar Pesanan",
+          style: TextStyle(
+            color: Color(0xFFF1F5F9),
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(15),
-        itemCount: _dummyOrders.length,
-        itemBuilder: (context, index) {
-          final order = _dummyOrders[index];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
-              side: BorderSide(color: Colors.grey.shade200),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('orders')
+                .orderBy('created_at', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return const Center(
+                  child: Text(
+                    "Terjadi kesalahan saat memuat data",
+                    style: TextStyle(color: Color(0xFFEF4444)),
+                  ),
+                );
+              }
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+                );
+              }
+
+              if (snapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        order['id'],
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                      Icon(
+                        Icons.inbox_rounded,
+                        size: 64,
+                        color: Colors.white.withOpacity(0.1),
                       ),
-                      _buildStatusBadge(order['status']),
+                      const SizedBox(height: 16),
+                      const Text(
+                        "Belum ada pesanan masuk.",
+                        style: TextStyle(color: Color(0xFF64748B), fontSize: 15),
+                      ),
                     ],
                   ),
-                  const Divider(height: 24),
-                  Row(
-                    children: [
-                      const CircleAvatar(child: Icon(Icons.person, size: 20)),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(order['customer'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                          Text(order['service'], style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                        ],
-                      ),
-                      const Spacer(),
-                      Text(order['total'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-                  
-                  // Tombol Verifikasi (Hanya muncul jika belum verified - Sesuai Flowchart)
-                  if (!order['isVerified'])
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _showVerifyDialog(index),
-                        icon: const Icon(Icons.check_circle_outline, size: 18),
-                        label: const Text("VERIFIKASI PEMBAYARAN"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                    )
-                  else
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                physics: const BouncingScrollPhysics(),
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (context, index) {
+                  var doc = snapshot.data!.docs[index];
+                  Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.05)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.verified, color: Colors.blue, size: 16),
-                        SizedBox(width: 5),
-                        Text("Pembayaran Valid", style: TextStyle(color: Colors.blue, fontSize: 12)),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.tag_rounded,
+                                  size: 16,
+                                  color: Color(0xFF6366F1),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  doc.id.substring(0, 8).toUpperCase(),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFF1F5F9),
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            _buildStatusBadge(data['status'] ?? "Pending"),
+                          ],
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Divider(color: Colors.white.withOpacity(0.05), height: 1),
+                        ),
+                        _buildInfoRow(Icons.person_outline_rounded, "Pelanggan", data['customer_name']),
+                        _buildInfoRow(Icons.local_laundry_service_outlined, "Layanan", data['service']),
+                        _buildInfoRow(Icons.scale_rounded, "Berat", "${data['weight']} Kg"),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              if (data['image_base64'] != null && data['image_base64'].toString().isNotEmpty) {
+                                _showPhotoDialog(
+                                  context,
+                                  data['image_base64'],
+                                  data['customer_name'] ?? 'Pelanggan',
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text("Foto tidak tersedia"),
+                                    backgroundColor: const Color(0xFFEF4444),
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.image_search_rounded, size: 20),
+                            label: const Text(
+                              "Lihat Bukti Timbangan",
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF818CF8),
+                              side: BorderSide(color: const Color(0xFF6366F1).withOpacity(0.5)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
-                ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String? value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF64748B)),
+          const SizedBox(width: 12),
+          Text(
+            "$label: ",
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 14,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value ?? "-",
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Color(0xFFE2E8F0),
+                fontSize: 14,
               ),
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildStatusBadge(String status) {
-    Color color = Colors.grey;
-    if (status == "Menunggu Pembayaran") color = Colors.orange;
-    if (status == "Sedang Dicuci") color = Colors.blue;
-    if (status == "Selesai") color = Colors.green;
+    Color badgeColor;
+    String statusLower = status.toLowerCase();
+    
+    if (statusLower.contains('selesai')) {
+      badgeColor = const Color(0xFF10B981);
+    } else if (statusLower.contains('proses') || statusLower.contains('jalan')) {
+      badgeColor = const Color(0xFF6366F1);
+    } else {
+      badgeColor = const Color(0xFFF59E0B);
+    }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
+        color: badgeColor.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: badgeColor.withOpacity(0.3)),
       ),
       child: Text(
         status,
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: badgeColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }
 
-  void _showVerifyDialog(int index) {
+  void _showPhotoDialog(BuildContext context, String base64String, String name) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Verifikasi Pembayaran?"),
-        content: Text("Pastikan uang transfer dari ${_dummyOrders[index]['customer']} sudah masuk ke rekening."),
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.white.withOpacity(0.08)),
+        ),
+        title: Text(
+          "Bukti Timbangan",
+          style: const TextStyle(
+            color: Color(0xFFF1F5F9),
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              name,
+              style: const TextStyle(
+                color: Color(0xFF818CF8),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(
+                  base64Decode(base64String),
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 200,
+                    color: Colors.white.withOpacity(0.05),
+                    child: const Center(
+                      child: Icon(
+                        Icons.broken_image_rounded,
+                        color: Color(0xFF64748B),
+                        size: 48,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Batal")),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _dummyOrders[index]['isVerified'] = true;
-                _dummyOrders[index]['status'] = "Sedang Dicuci";
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("Ya, Valid"),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF6366F1),
+            ),
+            child: const Text(
+              "Tutup",
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),

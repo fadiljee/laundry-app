@@ -1,38 +1,38 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 class OrderRemoteDataSource {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  Future<void> createOrder({
+  // PASTIKAN INI Future<String>, BUKAN Future<void>
+  Future<String> createOrder({
     required String name,
     required String phone,
     required double weight,
     required String service,
-    required File imageFile, // Foto timbangan
+    required File imageFile,
   }) async {
     try {
-      // 1. Upload Foto ke Firebase Storage
-      String fileName = 'timbangan_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      Reference ref = _storage.ref().child('orders/$fileName');
-      UploadTask uploadTask = ref.putFile(imageFile);
-      TaskSnapshot snapshot = await uploadTask;
-      String imageUrl = await snapshot.ref.getDownloadURL();
+      List<int> imageBytes = await imageFile.readAsBytes();
+      String base64Image = base64Encode(imageBytes);
 
-      // 2. Simpan Data ke Firestore
-      await _firestore.collection('orders').add({
+      // Gunakan DocumentReference untuk menangkap data yang baru disimpan
+      DocumentReference docRef = await _firestore.collection('orders').add({
         'customer_name': name,
         'wa_number': phone,
         'weight': weight,
         'service': service,
-        'image_url': imageUrl, // Link foto yang baru diupload
+        'image_base64': base64Image,
         'status': 'Menunggu Pembayaran',
         'created_at': FieldValue.serverTimestamp(),
       });
+      
+      // Kembalikan ID dokumennya ke UI
+      return docRef.id; 
     } catch (e) {
-      throw Exception("Gagal simpan pesanan: $e");
+      print("Error di DataSource: $e");
+      throw Exception("Gagal simpan: $e");
     }
   }
 }

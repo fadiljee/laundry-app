@@ -9,9 +9,12 @@ import 'features/laundry_management/presentation/pages/order_list_page.dart';
 import 'features/laundry_management/presentation/pages/tracking_page.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'features/order_tracking/presentation/pages/qr_scanner_page.dart';
+import 'package:laundry_app/features/laundry_management/presentation/pages/tracking_page.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'firebase_options.dart'; 
 
-void main() async { // <--- Pastikan ada ASYNC di sini
+void main() async { 
   WidgetsFlutterBinding.ensureInitialized();
   
   await Firebase.initializeApp(
@@ -20,7 +23,7 @@ void main() async { // <--- Pastikan ada ASYNC di sini
 
   runApp(const LyraLaundryApp());
 }
-class AuthRemoteDataSource { // <--- Pastikan nama class ini sama persis
+class AuthRemoteDataSource { 
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Future<User?> login(String email, String password) async {
@@ -46,15 +49,15 @@ class LyraLaundryApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       
-      // Definisikan rute halaman di sini
       routes: {
       '/': (context) => const CustomerLandingPage(),
-      '/login': (context) => const LoginPage(), // Tambahkan ini
+      '/login': (context) => const LoginPage(), 
       '/admin-dashboard': (context) => const AdminDashboardPage(),
       '/add-order': (context) => const AddOrderPage(),
       '/courier-dashboard': (context) => const CourierDashboardPage(),
       '/order-list': (context) => const OrderListPage(),
-      '/tracking': (context) => const TrackingPage(orderId: "LYR-999"), // Dummy ID
+      '/tracking': (context) => const TrackingPage(orderIdFromScanner: null),
+      '/scanner': (context) => const QrScannerPage(),
     },
     );
   }
