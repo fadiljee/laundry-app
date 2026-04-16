@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/datasources/auth_remote_datasource.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -10,6 +11,41 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _isLoading = false; // Untuk handle loading
+
+  Future<void> _handleLogin() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Email dan Password tidak boleh kosong!")),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // Panggil Firebase Auth
+    final user = await AuthRemoteDataSource().login(
+      _emailController.text.trim(),
+      _passwordController.text.trim(),
+    );
+
+    setState(() => _isLoading = false);
+
+    if (user != null) {
+      // Login Berhasil
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/admin-dashboard');
+    } else {
+      // Login Gagal
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Login Gagal. Cek email/password Anda."),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,10 +61,11 @@ class _LoginPageState extends State<LoginPage> {
             TextField(
               controller: _emailController,
               decoration: const InputDecoration(
-                labelText: "Email/Username",
+                labelText: "Email",
                 prefixIcon: Icon(Icons.email),
                 border: OutlineInputBorder(),
               ),
+              keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 15),
             TextField(
@@ -45,27 +82,14 @@ class _LoginPageState extends State<LoginPage> {
               width: double.infinity,
               height: 55,
               child: ElevatedButton(
-                onPressed: () {
-  String email = _emailController.text.trim();
-  String password = _passwordController.text.trim();
-
-  if (email == "admin" && password == "admin123") {
-    // Jika login sebagai Admin
-    Navigator.pushReplacementNamed(context, '/admin-dashboard');
-  } else if (email == "kurir" && password == "kurir123") {
-    // Jika login sebagai Kurir (nanti kita buat rutenya)
-    Navigator.pushReplacementNamed(context, '/courier-dashboard');
-  } else {
-    // Jika salah
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Email atau Password salah! (Coba: admin/admin123)"),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-},
-                child: const Text("MASUK"),
+                onPressed: _isLoading ? null : _handleLogin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: _isLoading 
+                    ? const CircularProgressIndicator(color: Colors.white) 
+                    : const Text("MASUK"),
               ),
             ),
           ],
