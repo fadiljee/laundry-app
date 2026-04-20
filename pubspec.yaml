@@ -37,6 +37,8 @@ dependencies:
   vibration: ^2.0.1
   audioplayers: ^5.2.1
   qr_flutter: ^4.1.0
+  google_maps_flutter: ^2.5.3
+  geolocator: ^10.1.0
   flutter:
     sdk: flutter
 

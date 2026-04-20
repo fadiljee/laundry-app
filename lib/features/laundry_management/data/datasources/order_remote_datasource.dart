@@ -35,4 +35,22 @@ class OrderRemoteDataSource {
       throw Exception("Gagal simpan: $e");
     }
   }
+
+  // Tambahkan di dalam class OrderRemoteDataSource
+Future<void> processPayment({
+  required String docId,
+  required double totalAmount,
+  required String paymentMethod,
+}) async {
+  try {
+    await _firestore.collection('orders').doc(docId).update({
+      'status': 'Sudah Dibayar',
+      'total_price': totalAmount,
+      'payment_method': paymentMethod,
+      'payment_at': FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    throw Exception("Gagal memproses pembayaran: $e");
+  }
+}
 }

@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 class AuthRemoteDataSource {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Fungsi Login
   Future<User?> login(String email, String password) async {
     try {
       UserCredential result = await _auth.signInWithEmailAndPassword(
@@ -12,7 +11,6 @@ class AuthRemoteDataSource {
       );
       return result.user;
     } on FirebaseAuthException catch (e) {
-      // Menangani error spesifik dari Firebase
       if (e.code == 'user-not-found') {
         print('Email tidak terdaftar.');
       } else if (e.code == 'wrong-password') {
@@ -25,7 +23,6 @@ class AuthRemoteDataSource {
     }
   }
 
-  // Fungsi Logout
   Future<void> logout() async {
     await _auth.signOut();
   }

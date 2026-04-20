@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'payment_page.dart';
 
 class OrderListPage extends StatefulWidget {
   const OrderListPage({super.key});
@@ -107,104 +108,131 @@ class _OrderListPageState extends State<OrderListPage>
                 );
               }
 
-              return ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                physics: const BouncingScrollPhysics(),
-                itemCount: snapshot.data!.docs.length,
-                itemBuilder: (context, index) {
-                  var doc = snapshot.data!.docs[index];
-                  Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+                          return ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              physics: const BouncingScrollPhysics(),
+              itemCount: snapshot.data!.docs.length,
+              itemBuilder: (context, index) {
+                var doc = snapshot.data!.docs[index];
+                Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+                String status = data['status'] ?? "Pending";
 
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withOpacity(0.05)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.tag_rounded,
-                                  size: 16,
-                                  color: Color(0xFF6366F1),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  doc.id.substring(0, 8).toUpperCase(),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFFF1F5F9),
-                                    letterSpacing: 1.2,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            _buildStatusBadge(data['status'] ?? "Pending"),
-                          ],
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          child: Divider(color: Colors.white.withOpacity(0.05), height: 1),
-                        ),
-                        _buildInfoRow(Icons.person_outline_rounded, "Pelanggan", data['customer_name']),
-                        _buildInfoRow(Icons.local_laundry_service_outlined, "Layanan", data['service']),
-                        _buildInfoRow(Icons.scale_rounded, "Berat", "${data['weight']} Kg"),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 44,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              if (data['image_base64'] != null && data['image_base64'].toString().isNotEmpty) {
-                                _showPhotoDialog(
-                                  context,
-                                  data['image_base64'],
-                                  data['customer_name'] ?? 'Pelanggan',
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text("Foto tidak tersedia"),
-                                    backgroundColor: const Color(0xFFEF4444),
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.image_search_rounded, size: 20),
-                            label: const Text(
-                              "Lihat Bukti Timbangan",
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.3,
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.05)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.tag_rounded,
+                                size: 16,
+                                color: Color(0xFF6366F1),
                               ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF818CF8),
-                              side: BorderSide(color: const Color(0xFF6366F1).withOpacity(0.5)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
+                              const SizedBox(width: 4),
+                              Text(
+                                doc.id.substring(0, 8).toUpperCase(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFF1F5F9),
+                                  letterSpacing: 1.2,
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              );
+                          _buildStatusBadge(status),
+                        ],
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Divider(color: Colors.white.withOpacity(0.05), height: 1),
+                      ),
+                      _buildInfoRow(Icons.person_outline_rounded, "Pelanggan", data['customer_name']),
+                      _buildInfoRow(Icons.local_laundry_service_outlined, "Layanan", data['service']),
+                      _buildInfoRow(Icons.scale_rounded, "Berat", "${data['weight']} Kg"),
+                      const SizedBox(height: 20),
+                      
+                      // --- LOGIKA TOMBOL BERDASARKAN STATUS ---
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: status == "Menunggu Pembayaran"
+                            ? ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => PaymentPage(
+                                        orderId: doc.id,
+                                        weight: (data['weight'] as num).toDouble(),
+                                        customerName: data['customer_name'] ?? 'Pelanggan',
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.payments_rounded, size: 20),
+                                label: const Text("Proses Bayar"),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF10B981), // Warna Hijau Sukses
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              )
+                            : OutlinedButton.icon(
+                                onPressed: () {
+                                  if (data['image_base64'] != null && data['image_base64'].toString().isNotEmpty) {
+                                    _showPhotoDialog(
+                                      context,
+                                      data['image_base64'],
+                                      data['customer_name'] ?? 'Pelanggan',
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: const Text("Foto tidak tersedia"),
+                                        backgroundColor: const Color(0xFFEF4444),
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(Icons.image_search_rounded, size: 20),
+                                label: const Text(
+                                  "Lihat Bukti Timbangan",
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF818CF8),
+                                  side: BorderSide(color: const Color(0xFF6366F1).withOpacity(0.5)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
             },
           ),
         ),

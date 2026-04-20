@@ -1,195 +1,142 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:vibration/vibration.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:async';
+import '../../../laundry_management/presentation/pages/payment_page.dart';
 
-class CourierDashboardPage extends StatelessWidget {
+class CourierDashboardPage extends StatefulWidget {
   const CourierDashboardPage({super.key});
+
+  @override
+  State<CourierDashboardPage> createState() => _CourierDashboardPageState();
+}
+
+class _CourierDashboardPageState extends State<CourierDashboardPage> {
+  StreamSubscription<Position>? _positionStream;
+
+  // 1. FUNGSI UNTUK MEMINTA IZIN GPS
+  Future<void> _checkPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return Future.error('Location services are disabled.');
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return Future.error('Location permissions are denied');
+    }
+  }
+
+  // 2. FUNGSI KIRIM LOKASI KE FIREBASE (REAL-TIME)
+  void _startSharingLocation(String orderId) async {
+    await _checkPermission();
+    
+    // Setting: Update setiap pindah 10 meter
+    const LocationSettings locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10, 
+    );
+
+    _positionStream = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (Position position) {
+        FirebaseFirestore.instance.collection('orders').doc(orderId).update({
+          'courier_lat': position.latitude,
+          'courier_lng': position.longitude,
+          'status': 'Sedang Diantar', // Otomatis ganti status
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("GPS Aktif: Mengirim lokasi ke pelanggan..."), duration: Duration(seconds: 1)),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _positionStream?.cancel(); // Berhenti kirim GPS jika halaman ditutup
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
+        title: const Text("Tugas Kurir Live", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          "Dashboard Kurir",
-          style: TextStyle(
-            color: Color(0xFFF1F5F9),
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
-            icon: const Icon(
-              Icons.logout_rounded,
-              color: Color(0xFFEF4444),
-              size: 24,
-            ),
-          )
-        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('orders')
-            .orderBy('created_at', descending: true)
-            .snapshots(),
+        stream: FirebaseFirestore.instance.collection('orders').snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(
-              child: Text(
-                "Error memuat data",
-                style: TextStyle(color: Color(0xFFEF4444)),
-              ),
-            );
-          }
-          
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF6366F1)),
-            );
-          }
-
-          if (snapshot.hasData && snapshot.data!.docChanges.isNotEmpty) {
-            for (var change in snapshot.data!.docChanges) {
-              if (change.type == DocumentChangeType.added) {
-                Vibration.vibrate(duration: 1000);
-              }
-            }
-          }
-
-          final docs = snapshot.data!.docs;
-
-          if (docs.isEmpty) {
-            return const Center(
-              child: Text(
-                "Belum ada pesanan",
-                style: TextStyle(color: Color(0xFF64748B), fontSize: 16),
-              ),
-            );
-          }
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
           return ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            physics: const BouncingScrollPhysics(),
-            itemCount: docs.length,
+            padding: const EdgeInsets.all(20),
+            itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
-              final data = docs[index].data() as Map<String, dynamic>;
-              final String docId = docs[index].id;
+              var doc = snapshot.data!.docs[index];
+              var data = doc.data() as Map<String, dynamic>;
+              String status = data['status'] ?? "Pending";
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Theme(
-                  data: Theme.of(context).copyWith(
-                    dividerColor: Colors.transparent,
-                  ),
-                  child: ExpansionTile(
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    collapsedBackgroundColor: const Color(0xFF1E293B),
-                    backgroundColor: const Color(0xFF1E293B),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: Colors.white.withOpacity(0.05)),
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(data['customer_name'] ?? "Pelanggan", 
+                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                        _buildBadge(status),
+                      ],
                     ),
-                    collapsedShape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: Colors.white.withOpacity(0.05)),
-                    ),
-                    iconColor: const Color(0xFF818CF8),
-                    collapsedIconColor: const Color(0xFF64748B),
-                    leading: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF6366F1).withOpacity(0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.two_wheeler_rounded,
-                        color: Color(0xFF818CF8),
-                        size: 24,
-                      ),
-                    ),
-                    title: Text(
-                      data['customer_name'] ?? "Pelanggan",
-                      style: const TextStyle(
-                        color: Color(0xFFF1F5F9),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
-                    subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        "Status: ${data['status']}",
-                        style: const TextStyle(
-                          color: Color(0xFF6366F1),
-                          fontWeight: FontWeight.w500,
-                          fontSize: 13,
+                    const SizedBox(height: 10),
+                    Text(data['address'] ?? "Alamat belum diatur", style: const TextStyle(color: Colors.white60)),
+                    const Divider(color: Colors.white10, height: 30),
+                    
+                    Row(
+                      children: [
+                        // TOMBOL 1: MULAI ANTAR (AKTIFKAN MAP)
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                            onPressed: () => _startSharingLocation(doc.id),
+                            icon: const Icon(Icons.directions_bike),
+                            label: const Text("Mulai Antar"),
+                          ),
                         ),
-                      ),
-                    ),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (data['image_base64'] != null && data['image_base64'].toString().isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 20),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Image.memory(
-                                    base64Decode(data['image_base64']),
-                                    height: 180,
-                                    width: double.infinity,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => Container(
-                                      height: 150,
-                                      color: Colors.white.withOpacity(0.05),
-                                      child: const Icon(
-                                        Icons.broken_image_rounded, 
-                                        color: Color(0xFF64748B),
-                                      ),
-                                    ),
-                                  ),
+                        const SizedBox(width: 10),
+                        // TOMBOL 2: BAYAR (QRIS)
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white),
+                            onPressed: () {
+                              Navigator.push(context, MaterialPageRoute(
+                                builder: (context) => PaymentPage(
+                                  orderId: doc.id,
+                                  weight: (data['weight'] as num).toDouble(),
+                                  customerName: data['customer_name'],
                                 ),
-                              ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildActionButton(
-                                    context: context,
-                                    id: docId,
-                                    label: "Proses Jemput",
-                                    newStatus: "Dalam Perjalanan",
-                                    color: const Color(0xFF6366F1),
-                                    textColor: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildActionButton(
-                                    context: context,
-                                    id: docId,
-                                    label: "Selesai",
-                                    newStatus: "Selesai",
-                                    color: Colors.transparent,
-                                    textColor: const Color(0xFFF1F5F9),
-                                    borderColor: const Color(0xFF475569),
-                                  ),
-                                ),
-                              ],
-                            )
-                          ],
+                              ));
+                            },
+                            icon: const Icon(Icons.qr_code),
+                            label: const Text("Bayar"),
+                          ),
                         ),
-                      )
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
               );
             },
@@ -199,54 +146,11 @@ class CourierDashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton({
-    required BuildContext context,
-    required String id,
-    required String label,
-    required String newStatus,
-    required Color color,
-    required Color textColor,
-    Color? borderColor,
-  }) {
-    return SizedBox(
-      height: 48,
-      child: ElevatedButton(
-        onPressed: () {
-          FirebaseFirestore.instance.collection('orders').doc(id).update({
-            'status': newStatus,
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("Status diperbarui: $newStatus"),
-              backgroundColor: const Color(0xFF1E293B),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.white.withOpacity(0.1)),
-              ),
-            ),
-          );
-        },
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: textColor,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: borderColor != null 
-                ? BorderSide(color: borderColor, width: 1.5) 
-                : BorderSide.none,
-          ),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.3,
-          ),
-        ),
-      ),
+  Widget _buildBadge(String status) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: Colors.blue.withOpacity(0.2), borderRadius: BorderRadius.circular(5)),
+      child: Text(status, style: const TextStyle(color: Colors.blue, fontSize: 10, fontWeight: FontWeight.bold)),
     );
   }
 }
