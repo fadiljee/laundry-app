@@ -1,8 +1,23 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart'; 
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../data/datasources/order_remote_datasource.dart';
+import '../../data/models/order_model.dart';
+
+// ─────────────────────────────────────────────────────────────
+//  DESIGN TOKENS (Modern Clean Light Theme)
+// ─────────────────────────────────────────────────────────────
+class _T {
+  static const bg          = Color(0xFFF8FAFC); 
+  static const surface     = Color(0xFFFFFFFF); 
+  static const accent      = Color(0xFF2563EB); 
+  static const accentDark  = Color(0xFF1D4ED8); 
+  static const border      = Color(0xFFE2E8F0); 
+  static const textMain    = Color(0xFF0F172A); 
+  static const textMuted   = Color(0xFF64748B); 
+  static const danger      = Color(0xFFEF4444); 
+}
 
 class AddOrderPage extends StatefulWidget {
   const AddOrderPage({super.key});
@@ -15,12 +30,12 @@ class _AddOrderPageState extends State<AddOrderPage>
     with SingleTickerProviderStateMixin {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _addressController = TextEditingController();
   final _weightController = TextEditingController();
   
   String _selectedService = 'Cuci Kering';
   final List<String> _services = ['Cuci Kering', 'Cuci Setrika', 'Setrika Saja', 'Bedcover'];
   
-  File? _selectedImage;
   bool _isLoading = false;
 
   late AnimationController _animController;
@@ -53,151 +68,147 @@ class _AddOrderPageState extends State<AddOrderPage>
     _animController.dispose();
     _nameController.dispose();
     _phoneController.dispose();
+    _addressController.dispose();
     _weightController.dispose();
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.camera, imageQuality: 50);
-    if (pickedFile != null) {
-      setState(() { _selectedImage = File(pickedFile.path); });
-    }
-  }
-
   Future<void> _handleSaveOrder() async {
-    if (_nameController.text.isEmpty || _selectedImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text("Nama & Foto wajib diisi!"),
-          backgroundColor: const Color(0xFFEF4444),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
+    // Validasi Input (Hapus pengecekan gambar)
+    if (_nameController.text.isEmpty || 
+        _addressController.text.isEmpty || 
+        _weightController.text.isEmpty) {
+      _showSnackBar("Nama, Alamat & Berat wajib diisi!", isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      String orderId = await OrderRemoteDataSource().createOrder(
-        name: _nameController.text.trim(),
-        phone: _phoneController.text.trim(),
-        weight: double.parse(_weightController.text.trim()),
-        service: _selectedService,
-        imageFile: _selectedImage!,
+      // 1. Siapkan Map Data untuk Laravel
+      final Map<String, String> orderData = {
+        'customer_name': _nameController.text.trim(),
+        'wa_number': _phoneController.text.trim(),
+        'address': _addressController.text.trim(),
+        'weight': _weightController.text.trim(),
+        'service': _selectedService,
+      };
+
+      // 2. Tembak API Laravel via OrderRemoteDataSource
+      // (Pastikan fungsi createOrder di datasource kamu juga tidak lagi memaksa _selectedImage)
+      final OrderModel newOrder = await OrderRemoteDataSource().createOrder(
+        orderData, 
+        null, // Kirim null untuk gambar
       );
 
       if (!mounted) return;
-      _showSuccessDialog(orderId);
+      
+      // 3. Tampilkan Dialog Sukses dengan QR Code dari Order Code Laravel
+      _showSuccessDialog(newOrder.orderCode);
+
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          backgroundColor: const Color(0xFFEF4444),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
+      if (!mounted) return;
+      _showSnackBar("Gagal Simpan: $e", isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showSuccessDialog(String id) {
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w500),
+        ),
+        backgroundColor: isError ? _T.danger : _T.accentDark,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _showSuccessDialog(String code) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: _T.surface,
+        surfaceTintColor: Colors.transparent, 
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.white.withOpacity(0.08)),
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: _T.border, width: 1),
         ),
-        title: const Center(
+        title: Center(
           child: Text(
             "Pesanan Berhasil!",
-            style: TextStyle(
-              color: Color(0xFFF1F5F9),
-              fontWeight: FontWeight.w600,
-            ),
+            style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700, fontSize: 20),
           ),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               "Scan QR untuk Tracking",
-              style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+              style: GoogleFonts.inter(color: _T.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
+                color: _T.bg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: _T.border),
               ),
               child: SizedBox(
                 width: 180,
                 height: 180,
                 child: QrImageView(
-                  data: id,
+                  data: code,
                   version: QrVersions.auto,
                   size: 180.0,
-                  backgroundColor: Colors.white,
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.square,
+                    color: _T.textMain,
+                  ),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: _T.textMain,
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                "ID: ${id.substring(0, 8)}",
-                style: const TextStyle(
-                  color: Color(0xFFE2E8F0),
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                ),
+            Text(
+              code,
+              style: GoogleFonts.poppins(
+                color: _T.accent,
+                fontWeight: FontWeight.w700,
+                fontSize: 22,
+                letterSpacing: 2,
               ),
             ),
           ],
         ),
         actions: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6366F1),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    "Kembali ke Menu",
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8, left: 8, right: 8),
+            child: SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context); 
+                  Navigator.pop(context); 
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _T.accent,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Text(
+                  "Selesai", 
+                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)
                 ),
               ),
             ),
@@ -209,171 +220,100 @@ class _AddOrderPageState extends State<AddOrderPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFFF1F5F9)),
-        title: const Text(
-          "Input Pesanan",
-          style: TextStyle(
-            color: Color(0xFFF1F5F9),
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark, 
+      child: Scaffold(
+        backgroundColor: _T.bg,
+        appBar: AppBar(
+          backgroundColor: _T.surface,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          iconTheme: const IconThemeData(color: _T.textMain), 
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(color: _T.border, height: 1),
           ),
+          title: Text(
+            "Input Pesanan Baru", 
+            style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700, fontSize: 18)
+          ),
+          centerTitle: true,
         ),
-        centerTitle: true,
-      ),
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: SlideTransition(
-          position: _slideAnim,
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildLabel("Nama Pelanggan"),
-                const SizedBox(height: 8),
-                _buildTextField(
-                  controller: _nameController,
-                  hint: "Masukkan nama",
-                  icon: Icons.person_outline_rounded,
-                ),
-                const SizedBox(height: 20),
-                
-                _buildLabel("No. WhatsApp"),
-                const SizedBox(height: 8),
-                _buildTextField(
-                  controller: _phoneController,
-                  hint: "08xxxxxxxxxx",
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 20),
-                
-                _buildLabel("Layanan"),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: _selectedService,
-                  dropdownColor: const Color(0xFF1E293B),
-                  style: const TextStyle(color: Color(0xFFE2E8F0), fontSize: 14),
-                  icon: const Icon(Icons.expand_more_rounded, color: Color(0xFF475569)),
-                  items: _services.map((s) => DropdownMenuItem(
-                    value: s, 
-                    child: Text(s),
-                  )).toList(),
-                  onChanged: (val) => setState(() => _selectedService = val!),
-                  decoration: _inputDecoration(Icons.local_laundry_service_outlined),
-                ),
-                const SizedBox(height: 20),
-                
-                _buildLabel("Berat Cucian (Kg)"),
-                const SizedBox(height: 8),
-                _buildTextField(
-                  controller: _weightController,
-                  hint: "Contoh: 2.5",
-                  icon: Icons.scale_rounded,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                ),
-                const SizedBox(height: 24),
-                
-                _buildLabel("Foto Timbangan"),
-                const SizedBox(height: 8),
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _pickImage,
-                    borderRadius: BorderRadius.circular(16),
-                    child: Ink(
-                      height: 160,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.04),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: _selectedImage == null 
-                              ? Colors.white.withOpacity(0.1) 
-                              : const Color(0xFF6366F1).withOpacity(0.5),
+        body: FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildLabel("Nama Pelanggan"),
+                  _buildTextField(controller: _nameController, hint: "Masukkan nama", icon: Icons.person_rounded),
+                  const SizedBox(height: 20),
+                  
+                  _buildLabel("No. WhatsApp"),
+                  _buildTextField(controller: _phoneController, hint: "08xxxxxxxx", icon: Icons.phone_rounded, keyboardType: TextInputType.phone),
+                  const SizedBox(height: 20),
+
+                  _buildLabel("Alamat Lengkap"),
+                  _buildTextField(controller: _addressController, hint: "Jl. Contoh No. 123", icon: Icons.location_on_rounded),
+                  const SizedBox(height: 20),
+                  
+                  _buildLabel("Layanan"),
+                  Container(
+                    decoration: BoxDecoration(
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
                         ),
-                      ),
-                      child: _selectedImage == null 
-                        ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF6366F1).withOpacity(0.15),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.add_a_photo_rounded, 
-                                  color: Color(0xFF818CF8),
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                "Ambil Foto Timbangan",
-                                style: TextStyle(
-                                  color: Color(0xFF64748B),
-                                  fontSize: 13,
-                                ),
-                              )
-                            ],
-                          )
-                        : ClipRRect(
-                            borderRadius: BorderRadius.circular(15),
-                            child: Image.file(_selectedImage!, fit: BoxFit.cover),
-                          ),
+                      ],
+                    ),
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedService,
+                      dropdownColor: _T.surface,
+                      icon: const Icon(Icons.expand_more_rounded, color: _T.textMuted),
+                      style: GoogleFonts.inter(color: _T.textMain, fontWeight: FontWeight.w500),
+                      items: _services.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                      onChanged: (val) => setState(() => _selectedService = val!),
+                      decoration: _inputDecoration(Icons.local_laundry_service_rounded),
                     ),
                   ),
-                ),
-                const SizedBox(height: 40),
-                
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _handleSaveOrder,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6366F1),
-                      disabledBackgroundColor: const Color(0xFF6366F1).withOpacity(0.6),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 20),
+                  
+                  _buildLabel("Berat Cucian (Kg)"),
+                  _buildTextField(controller: _weightController, hint: "0.0", icon: Icons.scale_rounded, keyboardType: TextInputType.number),
+                  
+                  // FOTO TIMBANGAN TELAH DIHAPUS DARI SINI
+                  const SizedBox(height: 40),
+                  
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleSaveOrder,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _T.accent,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shadowColor: _T.accent.withOpacity(0.4),
                       ),
-                    ),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
                       child: _isLoading 
                           ? const SizedBox(
-                              key: ValueKey('loading'),
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2.5,
-                              ),
+                              height: 24, width: 24,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
                             )
-                          : const Text(
-                              key: ValueKey('text'),
-                              "Simpan & Buat QR",
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.3,
-                              ),
+                          : Text(
+                              "Simpan Pesanan", 
+                              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white, letterSpacing: 0.5)
                             ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-              ],
+                  const SizedBox(height: 20), 
+                ],
+              ),
             ),
           ),
         ),
@@ -382,55 +322,53 @@ class _AddOrderPageState extends State<AddOrderPage>
   }
 
   Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-        color: Color(0xFF64748B),
-        letterSpacing: 0.3,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
+      child: Text(
+        text, 
+        style: GoogleFonts.inter(fontSize: 13, color: _T.textMain, fontWeight: FontWeight.w600)
       ),
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    TextInputType? keyboardType,
-  }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      style: const TextStyle(
-        color: Color(0xFFE2E8F0),
-        fontSize: 14,
+  Widget _buildTextField({required TextEditingController controller, required String hint, required IconData icon, TextInputType? keyboardType}) {
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      decoration: _inputDecoration(icon).copyWith(hintText: hint),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        style: GoogleFonts.inter(color: _T.textMain, fontWeight: FontWeight.w500),
+        decoration: _inputDecoration(icon).copyWith(hintText: hint),
+      ),
     );
   }
 
   InputDecoration _inputDecoration(IconData icon) {
     return InputDecoration(
-      hintStyle: const TextStyle(color: Color(0xFF475569)),
-      prefixIcon: Icon(icon, size: 20, color: const Color(0xFF475569)),
+      prefixIcon: Icon(icon, color: _T.accent.withOpacity(0.8), size: 22),
       filled: true,
-      fillColor: Colors.white.withOpacity(0.06),
+      fillColor: _T.surface,
+      hintStyle: GoogleFonts.inter(color: _T.textMuted.withOpacity(0.6), fontWeight: FontWeight.w400),
       contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+        borderRadius: BorderRadius.circular(14), 
+        borderSide: const BorderSide(color: _T.border)
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+        borderRadius: BorderRadius.circular(14), 
+        borderSide: const BorderSide(color: _T.border)
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: Color(0xFF6366F1),
-          width: 1.5,
-        ),
+        borderRadius: BorderRadius.circular(14), 
+        borderSide: const BorderSide(color: _T.accent, width: 1.5)
       ),
     );
   }

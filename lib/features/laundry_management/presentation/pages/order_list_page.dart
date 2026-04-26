@@ -1,7 +1,26 @@
-import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'payment_page.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import '../../data/datasources/order_remote_datasource.dart';
+import '../../data/models/order_model.dart';
+
+// ─────────────────────────────────────────────────────────────
+//  DESIGN TOKENS (Modern Clean Light Theme)
+// ─────────────────────────────────────────────────────────────
+class _T {
+  static const bg          = Color(0xFFF8FAFC); 
+  static const surface     = Color(0xFFFFFFFF); 
+  static const accent      = Color(0xFF2563EB); 
+  static const border      = Color(0xFFE2E8F0); 
+  static const textMain    = Color(0xFF0F172A); 
+  static const textMuted   = Color(0xFF64748B); 
+  static const success     = Color(0xFF10B981); 
+  static const warning     = Color(0xFFF59E0B); 
+  static const danger      = Color(0xFFEF4444); 
+}
 
 class OrderListPage extends StatefulWidget {
   const OrderListPage({super.key});
@@ -12,8 +31,7 @@ class OrderListPage extends StatefulWidget {
 
 class _OrderListPageState extends State<OrderListPage>
     with SingleTickerProviderStateMixin {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
+  
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -45,224 +63,182 @@ class _OrderListPageState extends State<OrderListPage>
     super.dispose();
   }
 
+  // --- FUNGSI REFRESH ---
+  Future<void> _onRefresh() async {
+    setState(() {});
+  }
+
+  // --- FUNGSI UPLOAD FOTO ---
+  Future<void> _uploadNewPhoto(int orderId) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.camera, 
+      imageQuality: 60,
+      maxWidth: 1024,  
+      maxHeight: 1024,
+    );
+    
+    if (pickedFile != null) {
+      if (!mounted) return;
+      
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator(color: _T.accent)),
+      );
+
+      try {
+        await OrderRemoteDataSource().uploadOrderImage(orderId, File(pickedFile.path));
+        
+        if (!mounted) return;
+        Navigator.pop(context); // Tutup loading
+        Navigator.pop(context); // Tutup dialog foto
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: const Text("Foto timbangan berhasil diupload!"), backgroundColor: _T.success),
+        );
+        _onRefresh(); 
+      } catch (e) {
+        if (!mounted) return;
+        Navigator.pop(context); // Tutup loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Gagal upload: $e"), backgroundColor: _T.danger),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFFF1F5F9)),
-        title: const Text(
-          "Daftar Pesanan",
-          style: TextStyle(
-            color: Color(0xFFF1F5F9),
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark, 
+      child: Scaffold(
+        backgroundColor: _T.bg,
+        appBar: AppBar(
+          backgroundColor: _T.surface,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          iconTheme: const IconThemeData(color: _T.textMain),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(color: _T.border, height: 1),
           ),
+          title: Text(
+            "Daftar Pesanan",
+            style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700, fontSize: 18),
+          ),
+          centerTitle: true,
         ),
-        centerTitle: true,
-      ),
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: SlideTransition(
-          position: _slideAnim,
-          child: StreamBuilder<QuerySnapshot>(
-            stream: _firestore
-                .collection('orders')
-                .orderBy('created_at', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return const Center(
-                  child: Text(
-                    "Terjadi kesalahan saat memuat data",
-                    style: TextStyle(color: Color(0xFFEF4444)),
-                  ),
-                );
-              }
+        body: FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: RefreshIndicator(
+              onRefresh: _onRefresh,
+              color: _T.accent,
+              backgroundColor: _T.surface,
+              child: FutureBuilder<List<OrderModel>>(
+                future: OrderRemoteDataSource().getAllOrders(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text("Error: ${snapshot.error}", style: GoogleFonts.inter(color: _T.danger)));
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: _T.accent));
+                  }
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    return _buildEmptyState();
+                  }
 
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF6366F1)),
-                );
-              }
-
-              if (snapshot.data!.docs.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.inbox_rounded,
-                        size: 64,
-                        color: Colors.white.withOpacity(0.1),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        "Belum ada pesanan masuk.",
-                        style: TextStyle(color: Color(0xFF64748B), fontSize: 15),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-                          return ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              physics: const BouncingScrollPhysics(),
-              itemCount: snapshot.data!.docs.length,
-              itemBuilder: (context, index) {
-                var doc = snapshot.data!.docs[index];
-                Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-                String status = data['status'] ?? "Pending";
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.05)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.tag_rounded,
-                                size: 16,
-                                color: Color(0xFF6366F1),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                doc.id.substring(0, 8).toUpperCase(),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFFF1F5F9),
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                            ],
-                          ),
-                          _buildStatusBadge(status),
-                        ],
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Divider(color: Colors.white.withOpacity(0.05), height: 1),
-                      ),
-                      _buildInfoRow(Icons.person_outline_rounded, "Pelanggan", data['customer_name']),
-                      _buildInfoRow(Icons.local_laundry_service_outlined, "Layanan", data['service']),
-                      _buildInfoRow(Icons.scale_rounded, "Berat", "${data['weight']} Kg"),
-                      const SizedBox(height: 20),
-                      
-                      // --- LOGIKA TOMBOL BERDASARKAN STATUS ---
-                      SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: status == "Menunggu Pembayaran"
-                            ? ElevatedButton.icon(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => PaymentPage(
-                                        orderId: doc.id,
-                                        weight: (data['weight'] as num).toDouble(),
-                                        customerName: data['customer_name'] ?? 'Pelanggan',
-                                      ),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.payments_rounded, size: 20),
-                                label: const Text("Proses Bayar"),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF10B981), // Warna Hijau Sukses
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                              )
-                            : OutlinedButton.icon(
-                                onPressed: () {
-                                  if (data['image_base64'] != null && data['image_base64'].toString().isNotEmpty) {
-                                    _showPhotoDialog(
-                                      context,
-                                      data['image_base64'],
-                                      data['customer_name'] ?? 'Pelanggan',
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: const Text("Foto tidak tersedia"),
-                                        backgroundColor: const Color(0xFFEF4444),
-                                        behavior: SnackBarBehavior.floating,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                                icon: const Icon(Icons.image_search_rounded, size: 20),
-                                label: const Text(
-                                  "Lihat Bukti Timbangan",
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.3,
-                                  ),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF818CF8),
-                                  side: BorderSide(color: const Color(0xFF6366F1).withOpacity(0.5)),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-            },
+                  final orders = snapshot.data!;
+                  return ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: orders.length,
+                    itemBuilder: (context, index) {
+                      return _buildOrderCard(orders[index]);
+                    },
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String? value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
+  Widget _buildOrderCard(OrderModel order) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: _T.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _T.border),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: const Color(0xFF64748B)),
-          const SizedBox(width: 12),
-          Text(
-            "$label: ",
-            style: const TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 14,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            decoration: const BoxDecoration(color: _T.bg, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.tag_rounded, size: 16, color: _T.accent),
+                    const SizedBox(width: 4),
+                    Text(order.orderCode, style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: _T.textMain, letterSpacing: 1.0, fontSize: 14)),
+                  ],
+                ),
+                _buildStatusBadge(order.status),
+              ],
             ),
           ),
-          Expanded(
-            child: Text(
-              value ?? "-",
-              style: const TextStyle(
-                fontWeight: FontWeight.w500,
-                color: Color(0xFFE2E8F0),
-                fontSize: 14,
-              ),
+          
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoRow(Icons.person_rounded, "Pelanggan", order.customerName),
+                _buildInfoRow(Icons.local_laundry_service_rounded, "Layanan", order.service),
+                _buildInfoRow(Icons.scale_rounded, "Berat", "${order.weight} Kg"),
+                const SizedBox(height: 20),
+                
+                // --- ACTION BUTTONS (SISA QR & FOTO SAJA) ---
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showQrDialog(order.orderCode),
+                        icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+                        label: Text("QR Code", style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _T.textMain,
+                          side: const BorderSide(color: _T.border),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showPhotoDialog(order),
+                        icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                        label: Text("Timbangan", style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _T.accent,
+                          side: const BorderSide(color: _T.border),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -270,104 +246,158 @@ class _OrderListPageState extends State<OrderListPage>
     );
   }
 
-  Widget _buildStatusBadge(String status) {
-    Color badgeColor;
-    String statusLower = status.toLowerCase();
-    
-    if (statusLower.contains('selesai')) {
-      badgeColor = const Color(0xFF10B981);
-    } else if (statusLower.contains('proses') || statusLower.contains('jalan')) {
-      badgeColor = const Color(0xFF6366F1);
-    } else {
-      badgeColor = const Color(0xFFF59E0B);
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: badgeColor.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: badgeColor.withOpacity(0.3)),
-      ),
-      child: Text(
-        status,
-        style: TextStyle(
-          color: badgeColor,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(color: _T.surface, shape: BoxShape.circle),
+            child: const Icon(Icons.inbox_rounded, size: 64, color: _T.border),
+          ),
+          const SizedBox(height: 24),
+          Text("Belum ada pesanan", style: GoogleFonts.poppins(color: _T.textMain, fontSize: 18, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Text("Daftar pesanan pelanggan akan muncul di sini.", style: GoogleFonts.inter(color: _T.textMuted, fontSize: 13)),
+        ],
       ),
     );
   }
 
-  void _showPhotoDialog(BuildContext context, String base64String, String name) {
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: _T.textMuted.withOpacity(0.7)),
+          const SizedBox(width: 12),
+          Text("$label: ", style: GoogleFonts.inter(color: _T.textMuted, fontSize: 13)),
+          Expanded(child: Text(value, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: _T.textMain, fontSize: 14))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    Color badgeColor = status.toLowerCase().contains('bayar') ? _T.warning : _T.success;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: badgeColor.withOpacity(0.1), 
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: badgeColor.withOpacity(0.2)),
+      ),
+      child: Text(status, style: GoogleFonts.inter(color: badgeColor, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  // --- DIALOG TAMPILKAN QR CODE ---
+  void _showQrDialog(String code) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.white.withOpacity(0.08)),
-        ),
-        title: Text(
-          "Bukti Timbangan",
-          style: const TextStyle(
-            color: Color(0xFFF1F5F9),
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
-        ),
+        backgroundColor: _T.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: const BorderSide(color: _T.border)),
+        title: Center(child: Text("QR Pelanggan", style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700))),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              name,
-              style: const TextStyle(
-                color: Color(0xFF818CF8),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 16),
             Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.memory(
-                  base64Decode(base64String),
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 200,
-                    color: Colors.white.withOpacity(0.05),
-                    child: const Center(
-                      child: Icon(
-                        Icons.broken_image_rounded,
-                        color: Color(0xFF64748B),
-                        size: 48,
-                      ),
-                    ),
-                  ),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: _T.bg, borderRadius: BorderRadius.circular(20), border: Border.all(color: _T.border)),
+              child: SizedBox(
+                width: 180,
+                height: 180,
+                child: QrImageView(
+                  data: code,
+                  version: QrVersions.auto,
+                  size: 180.0,
+                  eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: _T.textMain),
+                  dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: _T.textMain),
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            Text(code, style: GoogleFonts.poppins(color: _T.accent, fontWeight: FontWeight.w700, fontSize: 20, letterSpacing: 1.5)),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF6366F1),
+            onPressed: () => Navigator.pop(context), 
+            child: Text("Tutup", style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: _T.textMuted)),
+          )
+        ],
+      ),
+    );
+  }
+
+  // --- DIALOG FOTO TIMBANGAN ---
+  void _showPhotoDialog(OrderModel order) {
+    final String? imageUrl = order.imageUrl; 
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _T.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: const BorderSide(color: _T.border)),
+        title: Text("Bukti Timbangan", style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: MediaQuery.of(context).size.width * 0.7, 
+              child: (imageUrl != null && imageUrl.isNotEmpty)
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.network(
+                        imageUrl,
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          height: 200, color: _T.bg,
+                          child: const Center(child: Icon(Icons.broken_image_rounded, size: 50, color: _T.border)),
+                        ),
+                      ),
+                    )
+                  : Container(
+                      height: 150, width: double.infinity,
+                      decoration: BoxDecoration(color: _T.bg, borderRadius: BorderRadius.circular(16), border: Border.all(color: _T.border)),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.image_not_supported_rounded, size: 40, color: _T.textMuted),
+                          const SizedBox(height: 8),
+                          Text("Belum ada foto", style: GoogleFonts.inter(color: _T.textMuted)),
+                        ],
+                      ),
+                    ),
             ),
-            child: const Text(
-              "Tutup",
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: () => _uploadNewPhoto(order.id), 
+                icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                label: Text(imageUrl == null ? "Upload Foto" : "Ganti Foto", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _T.accent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            )
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: Text("Tutup", style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: _T.textMuted)),
+          )
         ],
       ),
     );
