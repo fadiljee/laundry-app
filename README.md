@@ -1,4 +1,4 @@
-echo "# 🧺 Lyra Laundry - Smart Management System
+🧺 Lyra Laundry - Smart Management System
 
 Lyra Laundry adalah aplikasi manajemen laundry modern yang menghubungkan **Admin/Kurir** dan **Pelanggan** dalam satu ekosistem digital. Aplikasi ini mempermudah pencatatan pesanan, dokumentasi timbangan, hingga pembayaran otomatis melalui QRIS.
 
