@@ -2,17 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart'; 
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // <-- IMPORT INI
 import '../../data/datasources/order_remote_datasource.dart';
 import '../../data/models/order_model.dart';
 
-// ─────────────────────────────────────────────────────────────
-//  DESIGN TOKENS (Modern Clean Light Theme)
-// ─────────────────────────────────────────────────────────────
+
 class _T {
   static const bg          = Color(0xFFF8FAFC); 
   static const surface     = Color(0xFFFFFFFF); 
   static const accent      = Color(0xFF2563EB); 
   static const accentDark  = Color(0xFF1D4ED8); 
+  static const accentFaint = Color(0x1A2563EB);
   static const border      = Color(0xFFE2E8F0); 
   static const textMain    = Color(0xFF0F172A); 
   static const textMuted   = Color(0xFF64748B); 
@@ -28,15 +30,25 @@ class AddOrderPage extends StatefulWidget {
 
 class _AddOrderPageState extends State<AddOrderPage>
     with SingleTickerProviderStateMixin {
+      
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
-  final _weightController = TextEditingController();
   
-  String _selectedService = 'Cuci Kering';
-  final List<String> _services = ['Cuci Kering', 'Cuci Setrika', 'Setrika Saja', 'Bedcover'];
+  // Daftar Layanan dan Deskripsinya
+  final Map<String, String> _servicesData = {
+    'Cuci Lipat (Wash & Fold)': 'Layanan dasar cuci dan lipat pakaian sehari-hari.',
+    'Cuci Setrika (Wash & Iron)': 'Layanan komprehensif agar pakaian rapi dan wangi.',
+    'Dry Cleaning': 'Pencucian khusus bahan sensitif tanpa air.',
+    'Laundry Ekspres/Same Day': 'Layanan cepat selesai dalam hitungan jam.',
+    'Laundry Antar-Jemput': 'Kemudahan mengambil dan mengantar cucian ke lokasi konsumen.',
+    'Laundry Satuan': 'Khusus untuk pakaian berbahan khusus seperti jas, kebaya, atau gaun.'
+  };
+  
+  late String _selectedService;
   
   bool _isLoading = false;
+  bool _isGettingLocation = false; // State untuk loading lokasi
 
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
@@ -45,6 +57,11 @@ class _AddOrderPageState extends State<AddOrderPage>
   @override
   void initState() {
     super.initState();
+    _selectedService = _servicesData.keys.first;
+    
+    // Panggil fungsi untuk mengambil data pelanggan tersimpan
+    _loadSavedCustomerData();
+
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -69,46 +86,111 @@ class _AddOrderPageState extends State<AddOrderPage>
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
-    _weightController.dispose();
     super.dispose();
   }
 
+  // --- FUNGSI LOAD DATA PELANGGAN LAMA ---
+  Future<void> _loadSavedCustomerData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedName = prefs.getString('last_customer_name');
+    final savedPhone = prefs.getString('last_customer_wa');
+
+    if (savedName != null && savedPhone != null) {
+      if (mounted) {
+        setState(() {
+          _nameController.text = savedName;
+          _phoneController.text = savedPhone;
+        });
+      }
+    }
+  }
+
+  // --- FUNGSI AMBIL LOKASI OTOMATIS ---
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isGettingLocation = true);
+    
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        throw 'GPS kamu tidak aktif. Mohon nyalakan GPS terlebih dahulu.';
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw 'Izin lokasi ditolak.';
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        throw 'Izin lokasi ditolak permanen. Buka pengaturan HP untuk mengizinkan.';
+      }
+
+      // Ambil Koordinat
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+
+      // Ubah Koordinat jadi Alamat (Geocoding)
+      try {
+        List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+        if (placemarks.isNotEmpty) {
+          Placemark place = placemarks[0];
+          // Format alamat yang rapi
+          String address = "";
+          if (place.street != null && place.street!.isNotEmpty) address += "${place.street}, ";
+          if (place.subLocality != null && place.subLocality!.isNotEmpty) address += "${place.subLocality}, ";
+          if (place.locality != null && place.locality!.isNotEmpty) address += "${place.locality}";
+          
+          // Tambahkan link Gmaps di akhir alamat agar kurir mudah klik
+          address += "\n(https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude})";
+          
+          _addressController.text = address;
+        } else {
+          _addressController.text = 'https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}';
+        }
+      } catch (e) {
+        // Fallback jika geocoding gagal, berikan link google maps saja
+        _addressController.text = 'https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}';
+      }
+
+      _showSnackBar("Lokasi berhasil ditemukan!", isError: false);
+    } catch (e) {
+      _showSnackBar(e.toString(), isError: true);
+    } finally {
+      if (mounted) setState(() => _isGettingLocation = false);
+    }
+  }
+
   Future<void> _handleSaveOrder() async {
-    // Validasi Input (Hapus pengecekan gambar)
-    if (_nameController.text.isEmpty || 
-        _addressController.text.isEmpty || 
-        _weightController.text.isEmpty) {
-      _showSnackBar("Nama, Alamat & Berat wajib diisi!", isError: true);
+    if (_nameController.text.isEmpty || _addressController.text.isEmpty) {
+      _showSnackBar("Nama & Alamat wajib diisi!", isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // 1. Siapkan Map Data untuk Laravel
       final Map<String, String> orderData = {
         'customer_name': _nameController.text.trim(),
         'wa_number': _phoneController.text.trim(),
         'address': _addressController.text.trim(),
-        'weight': _weightController.text.trim(),
+        'weight': '0', 
         'service': _selectedService,
       };
 
-      // 2. Tembak API Laravel via OrderRemoteDataSource
-      // (Pastikan fungsi createOrder di datasource kamu juga tidak lagi memaksa _selectedImage)
-      final OrderModel newOrder = await OrderRemoteDataSource().createOrder(
-        orderData, 
-        null, // Kirim null untuk gambar
-      );
+      final OrderModel newOrder = await OrderRemoteDataSource().createOrder(orderData, null);
+
+      // --- SIMPAN DATA PELANGGAN KE MEMORI LOKAL SETELAH SUKSES ---
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_customer_name', orderData['customer_name']!);
+      await prefs.setString('last_customer_wa', orderData['wa_number']!);
 
       if (!mounted) return;
-      
-      // 3. Tampilkan Dialog Sukses dengan QR Code dari Order Code Laravel
       _showSuccessDialog(newOrder.orderCode);
 
     } catch (e) {
       if (!mounted) return;
-      _showSnackBar("Gagal Simpan: $e", isError: true);
+      _showSnackBar("Gagal Membuat Pesanan: $e", isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -121,7 +203,7 @@ class _AddOrderPageState extends State<AddOrderPage>
           message,
           style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w500),
         ),
-        backgroundColor: isError ? _T.danger : _T.accentDark,
+        backgroundColor: isError ? _T.danger : const Color(0xFF10B981), 
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -149,7 +231,8 @@ class _AddOrderPageState extends State<AddOrderPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              "Scan QR untuk Tracking",
+              "Ini adalah tiket pesanan Anda.\nKurir kami akan segera meluncur!",
+              textAlign: TextAlign.center,
               style: GoogleFonts.inter(color: _T.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 24),
@@ -167,14 +250,8 @@ class _AddOrderPageState extends State<AddOrderPage>
                   data: code,
                   version: QrVersions.auto,
                   size: 180.0,
-                  eyeStyle: const QrEyeStyle(
-                    eyeShape: QrEyeShape.square,
-                    color: _T.textMain,
-                  ),
-                  dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: _T.textMain,
-                  ),
+                  eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: _T.textMain),
+                  dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: _T.textMain),
                 ),
               ),
             ),
@@ -206,10 +283,7 @@ class _AddOrderPageState extends State<AddOrderPage>
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                child: Text(
-                  "Selesai", 
-                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)
-                ),
+                child: Text("Selesai", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
               ),
             ),
           ),
@@ -234,7 +308,7 @@ class _AddOrderPageState extends State<AddOrderPage>
             child: Container(color: _T.border, height: 1),
           ),
           title: Text(
-            "Input Pesanan Baru", 
+            "Buat Pesanan Baru", 
             style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700, fontSize: 18)
           ),
           centerTitle: true,
@@ -249,45 +323,63 @@ class _AddOrderPageState extends State<AddOrderPage>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildLabel("Nama Pelanggan"),
-                  _buildTextField(controller: _nameController, hint: "Masukkan nama", icon: Icons.person_rounded),
+                  _buildTextField(
+                    controller: _nameController, 
+                    hint: "Contoh: Budi Santoso", 
+                    icon: Icons.person_rounded
+                  ),
                   const SizedBox(height: 20),
                   
-                  _buildLabel("No. WhatsApp"),
-                  _buildTextField(controller: _phoneController, hint: "08xxxxxxxx", icon: Icons.phone_rounded, keyboardType: TextInputType.phone),
+                  _buildLabel("No. WhatsApp (Aktif)"),
+                  _buildTextField(
+                    controller: _phoneController, 
+                    hint: "08xxxxxxxxxx", 
+                    icon: Icons.phone_rounded, 
+                    keyboardType: TextInputType.phone
+                  ),
                   const SizedBox(height: 20),
 
-                  _buildLabel("Alamat Lengkap"),
-                  _buildTextField(controller: _addressController, hint: "Jl. Contoh No. 123", icon: Icons.location_on_rounded),
+                  _buildLabel("Alamat Penjemputan"),
+                  _buildLocationField(), 
                   const SizedBox(height: 20),
                   
-                  _buildLabel("Layanan"),
+                  _buildLabel("Pilih Layanan"),
                   Container(
                     decoration: BoxDecoration(
                       boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.02),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
+                        BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4)),
                       ],
                     ),
                     child: DropdownButtonFormField<String>(
                       value: _selectedService,
                       dropdownColor: _T.surface,
+                      isExpanded: true,
                       icon: const Icon(Icons.expand_more_rounded, color: _T.textMuted),
-                      style: GoogleFonts.inter(color: _T.textMain, fontWeight: FontWeight.w500),
-                      items: _services.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                      style: GoogleFonts.inter(color: _T.textMain, fontWeight: FontWeight.w600, fontSize: 14),
+                      items: _servicesData.keys.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
                       onChanged: (val) => setState(() => _selectedService = val!),
                       decoration: _inputDecoration(Icons.local_laundry_service_rounded),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline_rounded, size: 14, color: _T.textMuted.withOpacity(0.8)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            _servicesData[_selectedService]!,
+                            style: GoogleFonts.inter(color: _T.textMuted, fontSize: 12, height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   
-                  _buildLabel("Berat Cucian (Kg)"),
-                  _buildTextField(controller: _weightController, hint: "0.0", icon: Icons.scale_rounded, keyboardType: TextInputType.number),
-                  
-                  // FOTO TIMBANGAN TELAH DIHAPUS DARI SINI
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 48),
                   
                   SizedBox(
                     width: double.infinity,
@@ -306,7 +398,7 @@ class _AddOrderPageState extends State<AddOrderPage>
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
                             )
                           : Text(
-                              "Simpan Pesanan", 
+                              "Kirim Pesanan", 
                               style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white, letterSpacing: 0.5)
                             ),
                     ),
@@ -331,16 +423,15 @@ class _AddOrderPageState extends State<AddOrderPage>
     );
   }
 
-  Widget _buildTextField({required TextEditingController controller, required String hint, required IconData icon, TextInputType? keyboardType}) {
+  Widget _buildTextField({
+    required TextEditingController controller, 
+    required String hint, 
+    required IconData icon, 
+    TextInputType? keyboardType,
+  }) {
     return Container(
       decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))],
       ),
       child: TextField(
         controller: controller,
@@ -351,12 +442,59 @@ class _AddOrderPageState extends State<AddOrderPage>
     );
   }
 
+  Widget _buildLocationField() {
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))],
+      ),
+      child: TextField(
+        controller: _addressController,
+        maxLines: 3, 
+        minLines: 1,
+        style: GoogleFonts.inter(color: _T.textMain, fontWeight: FontWeight.w500),
+        decoration: _inputDecoration(Icons.location_on_rounded).copyWith(
+          hintText: "Ketik alamat atau tekan ikon lokasi...",
+          suffixIcon: Padding(
+            padding: const EdgeInsets.all(6.0),
+            child: Material(
+              color: _T.accentFaint,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              child: InkWell(
+                onTap: _isGettingLocation ? null : _getCurrentLocation,
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: _isGettingLocation 
+                    ? const SizedBox(
+                        width: 18, height: 18, 
+                        child: CircularProgressIndicator(strokeWidth: 2.5)
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.my_location_rounded, color: _T.accent, size: 18),
+                          const SizedBox(width: 6),
+                          Text("Lacak", style: GoogleFonts.inter(color: _T.accent, fontWeight: FontWeight.w600, fontSize: 12)),
+                        ],
+                      ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   InputDecoration _inputDecoration(IconData icon) {
     return InputDecoration(
-      prefixIcon: Icon(icon, color: _T.accent.withOpacity(0.8), size: 22),
+      prefixIcon: Padding(
+        padding: const EdgeInsets.only(bottom: 2.0),
+        child: Icon(icon, color: _T.accent.withOpacity(0.8), size: 22),
+      ),
       filled: true,
       fillColor: _T.surface,
-      hintStyle: GoogleFonts.inter(color: _T.textMuted.withOpacity(0.6), fontWeight: FontWeight.w400),
+      hintStyle: GoogleFonts.inter(color: _T.textMuted.withOpacity(0.6), fontWeight: FontWeight.w400, fontSize: 13),
       contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14), 

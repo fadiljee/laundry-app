@@ -376,7 +376,7 @@ class _PaymentPageState extends State<PaymentPage> {
 
               try {
                 final response = await http.post(
-                  Uri.parse('https://prize-pancake-spore.ngrok-free.dev/api/payment/token'),
+                  Uri.parse('http://192.168.1.9:8000/api/payment/token'),
                   headers: {'Content-Type': 'application/json'},
                   body: jsonEncode({
                     'total_harga': total.toInt(),

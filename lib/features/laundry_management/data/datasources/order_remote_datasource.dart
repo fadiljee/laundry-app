@@ -5,7 +5,7 @@ import '../models/order_model.dart';
 import '../../../../core/providers/auth_provider.dart';
 
 class OrderRemoteDataSource {
-  final String baseUrl = "https://prize-pancake-spore.ngrok-free.dev/api";
+  final String baseUrl = "http://192.168.1.9:8000/api";
 
   // Helper untuk Header (Biar nggak ngetik token berulang-ulang)
   Future<Map<String, String>> _getHeaders() async {
@@ -91,6 +91,28 @@ class OrderRemoteDataSource {
 
     if (response.statusCode != 200) {
       throw Exception('Gagal mengupdate status pesanan');
+    }
+  }
+  // --- FUNGSI UPDATE BERAT CUCIAN ---
+  Future<void> updateOrderWeight(int orderId, String weight) async {
+    String? token = await AuthStorage.getToken();
+    
+    // Ganti IP/Domain sesuai dengan yang kamu pakai (misal: http://192.168.1.9:8000 atau 192.168.x.x)
+    final url = Uri.parse('http://192.168.1.9:8000/api/orders/$orderId/weight'); 
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: {
+        'weight': weight,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Gagal mengupdate berat cucian: ${response.statusCode}');
     }
   }
 

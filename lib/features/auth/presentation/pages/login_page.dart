@@ -33,7 +33,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _isObscured = true;
 
   // Endpoint API
-  final String loginUrl = "https://prize-pancake-spore.ngrok-free.dev/api/login";
+  final String loginUrl = "http://192.168.1.9:8000/api/login";
 
   Future<void> _handleLogin() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {

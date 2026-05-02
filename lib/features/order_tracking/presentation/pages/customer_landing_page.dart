@@ -1,76 +1,28 @@
+import 'dart:async';
+import 'dart:convert'; // Untuk decode JSON API
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:math' as math;
-import 'qr_scanner_page.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Package baru
+import 'package:http/http.dart' as http;
 
 // ─────────────────────────────────────────────────────────────
-//  DESIGN TOKENS (MODERN CLEAN LIGHT THEME)
+//  DESIGN TOKENS
 // ─────────────────────────────────────────────────────────────
 class _T {
-  static const bg          = Color(0xFFF8FAFC); // Off-white/Slate-50
-  static const surface     = Color(0xFFFFFFFF); // Pure White
-  static const accent      = Color(0xFF2563EB); // Royal Blue (Primary)
-  static const accentDark  = Color(0xFF1D4ED8); // Darker Blue for gradient
-  static const accentFaint = Color(0x1A2563EB); // 10% Blue
-  static const border      = Color(0xFFE2E8F0); // Light Slate for cards
-  
-  static const textMain    = Color(0xFF0F172A); // Very Dark Slate (Not pure black)
-  static const textMuted   = Color(0xFF64748B); // Medium Slate for descriptions
+  static const bg          = Color(0xFFF8FAFC); 
+  static const surface     = Color(0xFFFFFFFF); 
+  static const accent      = Color(0xFF2563EB); 
+  static const accentFaint = Color(0x1A2563EB); 
+  static const border      = Color(0xFFE2E8F0); 
+  static const textMain    = Color(0xFF0F172A); 
+  static const textMuted   = Color(0xFF64748B); 
+  static const danger      = Color(0xFFEF4444); 
+  static const success     = Color(0xFF10B981); 
 }
 
-// ─────────────────────────────────────────────────────────────
-//  ANIMATED CONCENTRIC RINGS PAINTER
-// ─────────────────────────────────────────────────────────────
-class _RingPainter extends CustomPainter {
-  final double progress;
-  _RingPainter(this.progress);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radii = [size.width * 0.38, size.width * 0.46, size.width * 0.54];
-    final opacities = [0.2, 0.1, 0.05]; // Lebih tipis untuk light theme
-    final dashPhases = [0.0, 0.3, 0.6];
-
-    for (int i = 0; i < radii.length; i++) {
-      final paint = Paint()
-        ..color = _T.accent.withOpacity(opacities[i] * (0.6 + 0.4 * math.sin(progress * math.pi * 2 + dashPhases[i])))
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0;
-      if (i == 2) {
-        _drawDashedCircle(canvas, center, radii[i], paint);
-      } else {
-        canvas.drawCircle(center, radii[i], paint);
-      }
-    }
-  }
-
-  void _drawDashedCircle(Canvas canvas, Offset center, double radius, Paint paint) {
-    const dashCount = 36;
-    final step = (math.pi * 2) / dashCount;
-    for (int i = 0; i < dashCount; i++) {
-      if (i % 2 == 0) {
-        final start = Offset(
-          center.dx + radius * math.cos(i * step),
-          center.dy + radius * math.sin(i * step),
-        );
-        final end = Offset(
-          center.dx + radius * math.cos((i + 0.7) * step),
-          center.dy + radius * math.sin((i + 0.7) * step),
-        );
-        canvas.drawLine(start, end, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) => old.progress != progress;
-}
-
-// ─────────────────────────────────────────────────────────────
-//  PAGE
-// ─────────────────────────────────────────────────────────────
 class CustomerLandingPage extends StatefulWidget {
   const CustomerLandingPage({super.key});
 
@@ -80,119 +32,205 @@ class CustomerLandingPage extends StatefulWidget {
 
 class _CustomerLandingPageState extends State<CustomerLandingPage>
     with TickerProviderStateMixin {
+      
+  final MobileScannerController _scannerCtrl = MobileScannerController();
+  bool _hasScanned = false;
+  bool _torchOn = false;
 
+  // --- VARIABEL STATUS CUCIAN ---
+  String? _lastOrderCode;
+  String _lastOrderStatus = "Memuat data...";
+  bool _hasLastOrder = false;
+
+  // Animations
   late final AnimationController _entryCtrl;
-  late final AnimationController _ringCtrl;
-  late final AnimationController _buttonCtrl;
-
   late final Animation<double> _fadeAll;
-  late final Animation<Offset> _slideHero;
-  late final Animation<double> _scaleHero;
   late final Animation<Offset> _slideText;
-  late final Animation<Offset> _slideCards;
-  late final Animation<Offset> _slideBtn;
+  late final Animation<Offset> _slideScanner;
+  late final Animation<Offset> _slideStatus;
 
-  bool _buttonHeld = false;
+  late final AnimationController _successAnimCtrl;
+  late final Animation<double> _scaleSuccessAnim;
 
   @override
   void initState() {
     super.initState();
+    _loadLastOrder(); // Panggil data pesanan terakhir saat halaman dibuka
 
     _entryCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
-
     _fadeAll = CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.0, 0.4, curve: Curves.easeOut));
-    _scaleHero = Tween(begin: 0.8, end: 1.0).animate(CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.0, 0.5, curve: Curves.easeOutBack)));
-    _slideHero = Tween(begin: const Offset(0, 0.05), end: Offset.zero).animate(CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.0, 0.4, curve: Curves.easeOutCubic)));
-    _slideText = Tween(begin: const Offset(0, 0.08), end: Offset.zero).animate(CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.15, 0.55, curve: Curves.easeOutCubic)));
-    _slideCards = Tween(begin: const Offset(0, 0.1), end: Offset.zero).animate(CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.3, 0.7, curve: Curves.easeOutCubic)));
-    _slideBtn = Tween(begin: const Offset(0, 0.1), end: Offset.zero).animate(CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.45, 0.85, curve: Curves.easeOutCubic)));
+    _slideText = Tween(begin: const Offset(0, 0.08), end: Offset.zero).animate(CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.1, 0.5, curve: Curves.easeOutCubic)));
+    _slideScanner = Tween(begin: const Offset(0, 0.1), end: Offset.zero).animate(CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.2, 0.6, curve: Curves.easeOutCubic)));
+    _slideStatus = Tween(begin: const Offset(0, 0.1), end: Offset.zero).animate(CurvedAnimation(parent: _entryCtrl, curve: const Interval(0.4, 0.8, curve: Curves.easeOutCubic)));
 
-    _ringCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
-    _buttonCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 100));
+    _successAnimCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _scaleSuccessAnim = CurvedAnimation(parent: _successAnimCtrl, curve: Curves.elasticOut);
 
     _entryCtrl.forward();
   }
 
   @override
   void dispose() {
+    _scannerCtrl.dispose();
     _entryCtrl.dispose();
-    _ringCtrl.dispose();
-    _buttonCtrl.dispose();
+    _successAnimCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _onScanTap() async {
-    HapticFeedback.lightImpact();
-    await _buttonCtrl.forward();
-    await _buttonCtrl.reverse();
+  // ─────────────────────────────────────────────────────────────
+  //  LOGIC: AMBIL DATA PESANAN TERAKHIR (REAL STATUS)
+  // ─────────────────────────────────────────────────────────────
+  Future<void> _loadLastOrder() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedCode = prefs.getString('last_order_code');
+    
+    // Ambil status nyata terakhir yang tersimpan (jika kosong, beri teks default)
+    final savedStatus = prefs.getString('last_order_status') ?? "Memuat data..."; 
 
-    final result = await Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (_, a, __) => const QrScannerPage(),
-        transitionsBuilder: (_, a, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: a, curve: Curves.easeOut),
-          child: child,
-        ),
-        transitionDuration: const Duration(milliseconds: 300),
-      ),
-    );
+    if (savedCode != null && savedCode.isNotEmpty) {
+      setState(() {
+        _hasLastOrder = true;
+        _lastOrderCode = savedCode;
+        // Tampilkan status nyata dari memori lokal duluan biar UI tidak kosong
+        _lastOrderStatus = savedStatus; 
+      });
 
-    if (result != null && mounted) {
-      Navigator.pushNamed(context, '/tracking', arguments: result);
+      try {
+        final url = Uri.parse('http://192.168.1.9:8000/api/orders/$savedCode');
+        final response = await http.get(url).timeout(const Duration(seconds: 5));
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body)['data'];
+          
+          String statusText = data['status'];
+          if (statusText == 'pending') statusText = "Menunggu Konfirmasi";
+          if (statusText == 'pickup') statusText = "Kurir Menuju Lokasi";
+          if (statusText == 'processing') statusText = "Sedang Dicuci";
+          if (statusText == 'completed') statusText = "Selesai & Siap Diantar";
+
+          // SIMPAN STATUS NYATA TERBARU KE MEMORI HP
+          await prefs.setString('last_order_status', statusText);
+
+          if (mounted) setState(() => _lastOrderStatus = statusText);
+        }
+        // Jika response gagal (bukan 200), KITA DIAMKAN SAJA. 
+        // UI akan tetap menampilkan _lastOrderStatus dari SharedPreferences (data nyata terakhir).
+        
+      } catch (e) {
+        // Jika koneksi internet mati/timeout, KITA DIAMKAN SAJA.
+        // UI tetap aman menampilkan status nyata terakhir dari memori.
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _hasLastOrder = false;
+          _lastOrderStatus = "Belum ada pesanan";
+        });
+      }
     }
   }
 
-  static const _features = [
-    (_FeatureIcon.clock,  'Lacak\nReal-time'),
-    (_FeatureIcon.qr,     'Scan\nQR Nota'),
-    (_FeatureIcon.spark,  'Tanpa\nDaftar'),
-  ];
+  // HELPER: TAMPILKAN ERROR SNACKBAR
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w500)),
+        backgroundColor: _T.danger,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  // LOGIC: SCAN DARI GALERI
+  Future<void> _pickImageFromGallery() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+
+    if (image != null) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator(color: _T.accent)),
+      );
+
+      try {
+        await _scannerCtrl.stop(); 
+        final BarcodeCapture? capture = await _scannerCtrl.analyzeImage(image.path);
+        
+        if (!mounted) return;
+        Navigator.pop(context); 
+
+        if (capture != null && capture.barcodes.isNotEmpty) {
+          final String? scannedCode = capture.barcodes.first.rawValue;
+          if (scannedCode != null) _navigateToTracking(scannedCode);
+        } else {
+          _showErrorSnackBar("QR Code tidak ditemukan di foto ini.");
+          _scannerCtrl.start(); 
+        }
+      } catch (e) {
+        if (!mounted) return;
+        Navigator.pop(context);
+        _showErrorSnackBar("Gagal membaca gambar: $e");
+        _scannerCtrl.start();
+      }
+    }
+  }
+
+  // LOGIC: NAVIGASI DAN SIMPAN KODE
+  Future<void> _navigateToTracking(String code) async {
+    if (_hasScanned) return;
+    final cleanCode = code.trim();
+    if (cleanCode.isEmpty) return;
+
+    setState(() => _hasScanned = true);
+    HapticFeedback.lightImpact();
+    _scannerCtrl.stop();
+    _successAnimCtrl.forward();
+
+    // Simpan kode nota ke memori lokal
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_order_code', cleanCode);
+
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+    
+    // Pindah halaman dengan melempar argumen cleanCode
+    await Navigator.pushNamed(context, '/tracking', arguments: cleanCode);
+
+    // Refresh status saat user kembali (Back) ke halaman ini
+    if (mounted) {
+      setState(() => _hasScanned = false);
+      _successAnimCtrl.reverse();
+      _scannerCtrl.start();
+      _loadLastOrder(); 
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Pakai dark overlay karena background kita sekarang terang
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark.copyWith(
-        statusBarColor: Colors.transparent,
-      ),
+      value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
       child: Scaffold(
         backgroundColor: _T.bg,
         body: FadeTransition(
           opacity: _fadeAll,
-          child: LayoutBuilder(
-            builder: (ctx, constraints) => SingleChildScrollView(
+          child: SafeArea(
+            child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: IntrinsicHeight(
-                  child: SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 28),
-                      child: Column(
-                        children: [
-                          const Spacer(flex: 2),
-                          _buildBadge(),
-                          const SizedBox(height: 36),
-                          _buildHeroIcon(),
-                          const SizedBox(height: 40),
-                          _buildTypography(),
-                          const SizedBox(height: 36),
-                          _buildDivider(),
-                          const SizedBox(height: 28),
-                          _buildFeatureRow(),
-                          const Spacer(flex: 3),
-                          _buildCTAButton(),
-                          const SizedBox(height: 20),
-                          _buildFooterLink(),
-                          const SizedBox(height: 8),
-                          _buildHomeIndicator(),
-                          const SizedBox(height: 16),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 32),
+                  _buildScannerBox(),
+                  const SizedBox(height: 24),
+                  _buildNewOrderButton(),
+                  const SizedBox(height: 32),
+                  _buildStatusNotification(),
+                  const SizedBox(height: 32),
+                  _buildFooterLink(),
+                ],
               ),
             ),
           ),
@@ -201,319 +239,237 @@ class _CustomerLandingPageState extends State<CustomerLandingPage>
     );
   }
 
-  Widget _buildBadge() {
-    return SlideTransition(
-      position: _slideText,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: _T.accentFaint,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          'EXPRESS & CLEAN',
-          style: GoogleFonts.poppins(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: _T.accent,
-            letterSpacing: 1.5,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroIcon() {
-    return SlideTransition(
-      position: _slideHero,
-      child: ScaleTransition(
-        scale: _scaleHero,
-        child: AnimatedBuilder(
-          animation: _ringCtrl,
-          builder: (_, child) => SizedBox(
-            width: 160,
-            height: 160,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                CustomPaint(
-                  size: const Size(160, 160),
-                  painter: _RingPainter(_ringCtrl.value),
-                ),
-                child!,
-              ],
-            ),
-          ),
-          child: Container(
-            width: 96,
-            height: 96,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _T.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: _T.accent.withOpacity(0.15),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.local_laundry_service_rounded,
-                size: 44,
-                color: _T.accent,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTypography() {
+  Widget _buildHeader() {
     return SlideTransition(
       position: _slideText,
       child: Column(
         children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(color: _T.accentFaint, borderRadius: BorderRadius.circular(20)),
+            child: Text('EXPRESS & CLEAN', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w600, color: _T.accent, letterSpacing: 1.5)),
+          ),
+          const SizedBox(height: 16),
           RichText(
             textAlign: TextAlign.center,
             text: TextSpan(
               children: [
-                TextSpan(
-                  text: 'QQ ',
-                  style: GoogleFonts.poppins(
-                    fontSize: 40,
-                    fontWeight: FontWeight.w700,
-                    color: _T.textMain,
-                    letterSpacing: -1,
-                  ),
-                ),
-                TextSpan(
-                  text: 'Laundry',
-                  style: GoogleFonts.poppins(
-                    fontSize: 40,
-                    fontWeight: FontWeight.w400,
-                    color: _T.accent,
-                    letterSpacing: -1,
-                  ),
-                ),
+                TextSpan(text: 'QQ ', style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.w700, color: _T.textMain, letterSpacing: -1)),
+                TextSpan(text: 'Laundry', style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.w400, color: _T.accent, letterSpacing: -1)),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Lacak progres cucian Anda dengan instan.\nScan nota sekarang, tanpa perlu repot daftar.',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              color: _T.textMuted,
-              height: 1.6,
-            ),
-          ),
+          const SizedBox(height: 8),
+          Text('Arahkan kamera ke QR Code pada nota Anda', style: GoogleFonts.inter(fontSize: 13, color: _T.textMuted)),
         ],
       ),
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildScannerBox() {
     return SlideTransition(
-      position: _slideText,
-      child: Center(
-        child: Container(
-          width: 32,
-          height: 3,
-          decoration: BoxDecoration(
-            color: _T.border,
-            borderRadius: BorderRadius.circular(2),
-          ),
+      position: _slideScanner,
+      child: Container(
+        height: 280,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [BoxShadow(color: _T.accent.withOpacity(0.15), blurRadius: 24, offset: const Offset(0, 10))],
         ),
-      ),
-    );
-  }
-
-  Widget _buildFeatureRow() {
-    return SlideTransition(
-      position: _slideCards,
-      child: Row(
-        children: _features.map((f) => Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(
-              right: f == _features.last ? 0 : 12,
+        clipBehavior: Clip.hardEdge, 
+        child: Stack(
+          children: [
+            MobileScanner(
+              controller: _scannerCtrl,
+              onDetect: (capture) {
+                final barcode = capture.barcodes.first;
+                if (barcode.rawValue != null) _navigateToTracking(barcode.rawValue!);
+              },
             ),
-            child: _FeatureCard(iconType: f.$1, label: f.$2),
-          ),
-        )).toList(),
-      ),
-    );
-  }
-
-  Widget _buildCTAButton() {
-    return SlideTransition(
-      position: _slideBtn,
-      child: AnimatedBuilder(
-        animation: _buttonCtrl,
-        builder: (_, child) => Transform.scale(
-          scale: 1.0 - (_buttonCtrl.value * 0.04),
-          child: child,
-        ),
-        child: GestureDetector(
-          onTapDown: (_) => setState(() => _buttonHeld = true),
-          onTapUp: (_) => setState(() => _buttonHeld = false),
-          onTapCancel: () => setState(() => _buttonHeld = false),
-          onTap: _onScanTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            width: double.infinity,
-            height: 60,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: LinearGradient(
-                colors: _buttonHeld
-                    ? [_T.accentDark, const Color(0xFF1E3A8A)]
-                    : [_T.accent, _T.accentDark],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+            Container(color: Colors.black.withOpacity(0.1)),
+            const _ScanLineFull(),
+            ScaleTransition(
+              scale: _scaleSuccessAnim,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(color: _T.success, shape: BoxShape.circle),
+                  child: const Icon(Icons.check_rounded, color: Colors.white, size: 48),
+                ),
               ),
-              boxShadow: _buttonHeld
-                  ? []
-                  : [
-                      BoxShadow(
-                        color: _T.accent.withOpacity(0.3),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.qr_code_scanner_rounded,
-                  size: 22,
-                  color: Colors.white,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Scan Nota Sekarang',
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
+            Positioned(
+              top: 12, right: 12,
+              child: Row(
+                children: [
+                  _buildFloatingIconButton(
+                    icon: Icons.image_rounded, 
+                    onTap: _pickImageFromGallery,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  // PERBAIKAN SENTER LEBIH AMAN
+                  _buildFloatingIconButton(
+                    icon: _torchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded, 
+                    color: _torchOn ? Colors.amber : Colors.white,
+                    onTap: () async {
+                      try {
+                        await _scannerCtrl.toggleTorch();
+                        setState(() => _torchOn = !_torchOn);
+                      } catch (e) {
+                        _showErrorSnackBar("Gagal mengaktifkan senter");
+                      }
+                    },
+                  ),
+                ],
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusNotification() {
+    return SlideTransition(
+      position: _slideStatus,
+      child: GestureDetector(
+        onTap: () {
+          // CEK APAKAH ADA DATA UNTUK DILACAK
+          if (_hasLastOrder && _lastOrderCode != null) {
+            Navigator.pushNamed(context, '/tracking', arguments: _lastOrderCode).then((_) {
+              _loadLastOrder(); // Refresh kalau user kembali
+            });
+          } else {
+            _showErrorSnackBar("Belum ada riwayat pesanan yang tersimpan.");
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.blue.shade100),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
           ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(color: _T.accent, shape: BoxShape.circle),
+                child: const Icon(Icons.local_laundry_service_rounded, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _hasLastOrder ? "Resi: $_lastOrderCode" : "Status Cucian Terakhir", 
+                      style: GoogleFonts.inter(fontSize: 12, color: _T.accent, fontWeight: FontWeight.w600)
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _lastOrderStatus, 
+                      style: GoogleFonts.poppins(fontSize: 15, color: _T.textMain, fontWeight: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: _T.accent.withOpacity(0.5)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingIconButton({required IconData icon, required VoidCallback onTap, Color color = Colors.white}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), shape: BoxShape.circle),
+        child: Icon(icon, color: color, size: 20),
+      ),
+    );
+  }
+
+  Widget _buildNewOrderButton() {
+    return SlideTransition(
+      position: _slideScanner,
+      child: ElevatedButton(
+        onPressed: () => Navigator.pushNamed(context, '/add-order').then((_) => _loadLastOrder()),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _T.surface,
+          foregroundColor: _T.accent,
+          minimumSize: const Size(double.infinity, 60),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: _T.border)),
+          elevation: 0,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.add_shopping_cart_rounded, size: 20),
+            const SizedBox(width: 12),
+            Text("Belum punya nota? Buat Pesanan", style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600)),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildFooterLink() {
-    return SlideTransition(
-      position: _slideBtn,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            'Bukan pelanggan?  ',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              color: _T.textMuted,
-            ),
-          ),
-          GestureDetector(
-            onTap: () => Navigator.pushNamed(context, '/login'),
-            child: Text(
-              'Masuk sebagai Staff',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: _T.accent,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHomeIndicator() {
-    return Center(
-      child: Container(
-        width: 80,
-        height: 4,
-        decoration: BoxDecoration(
-          color: Colors.black12,
-          borderRadius: BorderRadius.circular(2),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text('Bukan pelanggan?  ', style: GoogleFonts.inter(fontSize: 13, color: _T.textMuted)),
+        GestureDetector(
+          onTap: () => Navigator.pushNamed(context, '/login'),
+          child: Text('Masuk Staff', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _T.accent)),
         ),
-      ),
+      ],
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  FEATURE CARD
-// ─────────────────────────────────────────────────────────────
-enum _FeatureIcon { clock, qr, spark }
+class _ScanLineFull extends StatefulWidget {
+  const _ScanLineFull();
+  @override
+  State<_ScanLineFull> createState() => _ScanLineFullState();
+}
 
-class _FeatureCard extends StatelessWidget {
-  final _FeatureIcon iconType;
-  final String label;
-  const _FeatureCard({required this.iconType, required this.label});
+class _ScanLineFullState extends State<_ScanLineFull> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-      decoration: BoxDecoration(
-        color: _T.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _T.border, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => Positioned(
+        top: 40 + (_anim.value * 200), 
+        left: 0, right: 0,
+        child: Container(
+          height: 2,
+          decoration: BoxDecoration(
+            boxShadow: [BoxShadow(color: _T.accent.withOpacity(0.5), blurRadius: 15)],
+            gradient: const LinearGradient(colors: [Colors.transparent, _T.accent, Colors.transparent]),
           ),
-        ],
+        ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildIcon(),
-          const SizedBox(height: 10),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _T.textMuted,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIcon() {
-    final icon = switch (iconType) {
-      _FeatureIcon.clock => Icons.access_time_filled_rounded,
-      _FeatureIcon.qr    => Icons.qr_code_2_rounded,
-      _FeatureIcon.spark => Icons.bolt_rounded,
-    };
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: const BoxDecoration(
-        color: _T.accentFaint,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(icon, size: 20, color: _T.accent),
     );
   }
 }

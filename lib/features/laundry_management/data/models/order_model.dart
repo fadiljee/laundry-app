@@ -2,6 +2,7 @@ class OrderModel {
   final int id;
   final String orderCode;
   final String customerName;
+  final String? waNumber; // --- TAMBAHAN WA NUMBER ---
   final double weight;
   final int totalHarga;
   final String status;
@@ -19,6 +20,7 @@ class OrderModel {
     required this.id,
     required this.orderCode,
     required this.customerName,
+    this.waNumber, // --- TAMBAHAN WA NUMBER ---
     required this.weight,
     required this.totalHarga,
     required this.status,
@@ -36,6 +38,7 @@ class OrderModel {
       id: json['id'] ?? 0,
       orderCode: json['order_code']?.toString() ?? '',
       customerName: json['customer_name']?.toString() ?? 'Pelanggan',
+      waNumber: json['wa_number']?.toString(), // --- PENANGKAP DATA WA NUMBER ---
       
       weight: json['weight'] is String 
           ? (double.tryParse(json['weight']) ?? 0.0) 

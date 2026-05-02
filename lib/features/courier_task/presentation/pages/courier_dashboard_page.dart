@@ -2,25 +2,26 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
-import 'package:google_fonts/google_fonts.dart'; // Pastikan package ini ada
+import 'package:google_fonts/google_fonts.dart'; 
 import '../../../../core/providers/auth_provider.dart';
 import '../../../laundry_management/data/datasources/order_remote_datasource.dart';
 import '../../../laundry_management/data/models/order_model.dart';
+import 'courier_order_detail_page.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  DESIGN TOKENS (Modern Clean Light Theme)
 // ─────────────────────────────────────────────────────────────
 class _T {
-  static const bg          = Color(0xFFF8FAFC); // Off-white/Slate-50
-  static const surface     = Color(0xFFFFFFFF); // Pure White
-  static const accent      = Color(0xFF2563EB); // Royal Blue
-  static const accentDark  = Color(0xFF1D4ED8); // Darker Blue
-  static const border      = Color(0xFFE2E8F0); // Light Slate
-  static const textMain    = Color(0xFF0F172A); // Very Dark Slate
-  static const textMuted   = Color(0xFF64748B); // Medium Slate
-  static const success     = Color(0xFF10B981); // Emerald Green
-  static const warning     = Color(0xFFF59E0B); // Amber
-  static const danger      = Color(0xFFEF4444); // Red
+  static const bg          = Color(0xFFF8FAFC); 
+  static const surface     = Color(0xFFFFFFFF); 
+  static const accent      = Color(0xFF2563EB); 
+  static const accentDark  = Color(0xFF1D4ED8); 
+  static const border      = Color(0xFFE2E8F0); 
+  static const textMain    = Color(0xFF0F172A); 
+  static const textMuted   = Color(0xFF64748B); 
+  static const success     = Color(0xFF10B981); 
+  static const warning     = Color(0xFFF59E0B); 
+  static const danger      = Color(0xFFEF4444); 
 }
 
 class CourierDashboardPage extends StatefulWidget {
@@ -35,21 +36,14 @@ class _CourierDashboardPageState extends State<CourierDashboardPage> {
   List<OrderModel> _orders = [];
   bool _isLoading = true;
   int _lastTaskCount = 0; 
-
-  final List<String> _statusOptions = [
-    'Lunas - Siap Jemput',
-    'Proses Jemput',
-    'Tiba di Laundry',
-    'Proses Cuci',
-    'Proses Antar',
-    'Selesai'
-  ];
+  bool _hasNotifiedInitial = false; // Flag agar pengingat cuma bunyi sekali saat masuk
 
   @override
   void initState() {
     super.initState();
     _fetchData(); 
 
+    // Auto-refresh setiap 10 detik untuk cek tugas baru dari Admin
     _timer = Timer.periodic(const Duration(seconds: 10), (timer) {
       _fetchData(isAutoRefresh: true);
     });
@@ -63,52 +57,71 @@ class _CourierDashboardPageState extends State<CourierDashboardPage> {
 
   Future<void> _fetchData({bool isAutoRefresh = false}) async {
     try {
-      final orders = await OrderRemoteDataSource().getAllOrders();
+      final allOrders = await OrderRemoteDataSource().getAllOrders();
       
       if (!mounted) return;
 
-      int currentTaskCount = orders.where((o) => 
-        o.status == 'Lunas - Siap Jemput' || 
-        o.status == 'Proses Antar' || 
-        o.status == 'Proses Jemput'
-      ).length;
+      // FILTER: Hanya tugas yang perlu tindakan kurir di lapangan
+      final taskForCourier = allOrders.where((o) {
+        return o.status == 'Lunas - Siap Jemput' || 
+               o.status == 'Proses Jemput' || 
+               o.status == 'Proses Antar';
+      }).toList();
 
-      if (isAutoRefresh && currentTaskCount > _lastTaskCount) {
-        _playNotificationSound();
+      // ─────────────────────────────────────────────────────────────
+      //  LOGIKA NOTIFIKASI (SUARA & SNACKBAR)
+      // ─────────────────────────────────────────────────────────────
+      
+      // 1. PENGINGAT: Jika baru masuk halaman & ada tugas mangkrak
+      if (!isAutoRefresh && taskForCourier.isNotEmpty && !_hasNotifiedInitial) {
+        _hasNotifiedInitial = true; 
+        Future.delayed(const Duration(milliseconds: 800), () {
+           _playNotificationSound(isReminder: true, count: taskForCourier.length);
+        });
+      }
+
+      // 2. TUGAS BARU: Jika sedang buka halaman & Admin nambah tugas baru
+      if (isAutoRefresh && taskForCourier.length > _lastTaskCount) {
+        _playNotificationSound(isReminder: false);
       }
 
       setState(() {
-        _orders = orders;
-        _lastTaskCount = currentTaskCount;
+        _orders = taskForCourier;
+        _lastTaskCount = taskForCourier.length;
         _isLoading = false;
       });
     } catch (e) {
       if (!isAutoRefresh && mounted) {
         setState(() => _isLoading = false);
-        _showSnackBar("Gagal memuat data: $e", isError: true);
       }
     }
   }
 
-  void _playNotificationSound() {
+  void _playNotificationSound({bool isReminder = false, int count = 0}) {
+    // Bunyi notifikasi sistem
     FlutterRingtonePlayer().playNotification();
     
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.notifications_active_rounded, color: Colors.white),
+            Icon(
+              isReminder ? Icons.assignment_late_rounded : Icons.notifications_active_rounded, 
+              color: Colors.white
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                "ADA TUGAS BARU!\nSilakan cek daftar pesanan.",
+                isReminder 
+                  ? "PENGINGAT: Kamu masih punya $count tugas aktif!" 
+                  : "ADA TUGAS BARU!\nCek daftar penjemputan/pengantaran.",
                 style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
               ),
             ),
           ],
         ),
-        backgroundColor: _T.warning, 
-        duration: const Duration(seconds: 5),
+        backgroundColor: isReminder ? _T.danger : _T.warning, 
+        duration: const Duration(seconds: 4),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.only(bottom: 20, left: 20, right: 20),
@@ -122,56 +135,22 @@ class _CourierDashboardPageState extends State<CourierDashboardPage> {
     Navigator.pushReplacementNamed(context, '/');
   }
 
-  Future<void> _updateStatus(int orderId, String currentStatus, String newStatus) async {
-    if (currentStatus == newStatus) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator(color: _T.accent)),
-    );
-
-    try {
-      await OrderRemoteDataSource().updateOrderStatus(orderId, newStatus);
-      if (!mounted) return;
-      Navigator.pop(context); 
-      
-      _showSnackBar("Status diubah ke: $newStatus");
-      _fetchData(); 
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.pop(context);
-      _showSnackBar("Gagal ubah status: $e", isError: true);
-    }
-  }
-
-  void _showSnackBar(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: GoogleFonts.inter(fontWeight: FontWeight.w500, color: Colors.white)),
-        backgroundColor: isError ? _T.danger : _T.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark, // Ikon status bar gelap
+      value: SystemUiOverlayStyle.dark, 
       child: Scaffold(
         backgroundColor: _T.bg,
         appBar: AppBar(
           backgroundColor: _T.surface,
           elevation: 0,
-          surfaceTintColor: Colors.transparent, // Mencegah warna berubah saat di-scroll
+          surfaceTintColor: Colors.transparent, 
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(1),
             child: Container(color: _T.border, height: 1),
           ),
           title: Text(
-            "Tugas Kurir", 
+            "Tugas Aktif Kurir", 
             style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700, fontSize: 18)
           ),
           centerTitle: true,
@@ -179,7 +158,6 @@ class _CourierDashboardPageState extends State<CourierDashboardPage> {
             IconButton(
               icon: const Icon(Icons.logout_rounded, color: _T.danger),
               onPressed: _handleLogout,
-              tooltip: 'Logout',
             )
           ],
         ),
@@ -205,137 +183,100 @@ class _CourierDashboardPageState extends State<CourierDashboardPage> {
   }
 
   Widget _buildCourierCard(OrderModel order) {
-    bool isDone = order.status.toLowerCase() == 'selesai';
-
-    return Opacity(
-      opacity: isDone ? 0.6 : 1.0,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: _T.surface,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: _T.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _T.border),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _T.border),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03), 
-              blurRadius: 10, 
-              offset: const Offset(0, 4)
-            )
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header: ID & Status
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: const BoxDecoration(
-                color: _T.bg, // Sedikit abu-abu agar kontras dengan badan card putih
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    order.orderCode, 
-                    style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700, fontSize: 14)
-                  ),
-                  _buildStatusBadge(order.status),
-                ],
-              ),
-            ),
+          onTap: () async {
+            final bool? isUpdated = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => CourierOrderDetailPage(order: order)),
+            );
             
-            // Body: Customer Info
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.person_rounded, color: _T.accent, size: 20),
-                      const SizedBox(width: 10),
-                      Text(
-                        order.customerName, 
-                        style: GoogleFonts.inter(color: _T.textMain, fontSize: 15, fontWeight: FontWeight.w600)
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.location_on_rounded, color: _T.danger, size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          order.address, 
-                          style: GoogleFonts.inter(color: _T.textMuted, height: 1.5, fontSize: 13)
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // Footer: Tombol Update Status (Hanya jika belum selesai)
-            if (!isDone)
+            if (isUpdated == true) {
+              _fetchData();
+            }
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: _T.border))
+                  color: _T.bg,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      "UPDATE STATUS PESANAN", 
-                      style: GoogleFonts.inter(
-                        color: _T.textMuted, 
-                        fontSize: 10, 
-                        fontWeight: FontWeight.w700, 
-                        letterSpacing: 1.0
-                      )
+                      order.orderCode, 
+                      style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700, fontSize: 14)
                     ),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: _T.bg, 
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _T.border)
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _statusOptions.contains(order.status) ? order.status : _statusOptions[0],
-                          isExpanded: true,
-                          dropdownColor: _T.surface,
-                          icon: const Icon(Icons.expand_more_rounded, color: _T.textMuted),
-                          style: GoogleFonts.inter(color: _T.textMain, fontWeight: FontWeight.w500),
-                          items: _statusOptions.map((String status) {
-                            return DropdownMenuItem<String>(
-                              value: status, 
-                              child: Text(status)
-                            );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            if (newValue != null) _updateStatus(order.id, order.status, newValue);
-                          },
-                        ),
-                      ),
-                    ),
+                    _buildStatusBadge(order.status),
                   ],
                 ),
               ),
-          ],
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _T.accent.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        order.status == 'Proses Antar' 
+                          ? Icons.local_shipping_rounded 
+                          : Icons.shopping_basket_rounded, 
+                        color: _T.accent, 
+                        size: 24
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            order.customerName, 
+                            style: GoogleFonts.poppins(color: _T.textMain, fontSize: 15, fontWeight: FontWeight.w600)
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            order.address, 
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(color: _T.textMuted, fontSize: 13)
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded, color: _T.border, size: 28),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildStatusBadge(String status) {
-    Color color = status.toLowerCase().contains('selesai') ? _T.success 
+    Color color = status.toLowerCase().contains('siap') ? _T.danger 
                 : status.toLowerCase().contains('proses') ? _T.warning 
                 : _T.accent;
 
@@ -343,7 +284,7 @@ class _CourierDashboardPageState extends State<CourierDashboardPage> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20), // Dibuat lebih membulat (pill shape)
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withOpacity(0.2)),
       ),
       child: Text(
@@ -360,20 +301,17 @@ class _CourierDashboardPageState extends State<CourierDashboardPage> {
         children: [
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: _T.surface,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.check_circle_outline_rounded, size: 80, color: _T.success),
+            decoration: const BoxDecoration(color: _T.surface, shape: BoxShape.circle),
+            child: const Icon(Icons.assignment_turned_in_rounded, size: 80, color: _T.success),
           ),
           const SizedBox(height: 24),
           Text(
-            "Kerjaan Beres!", 
+            "Semua Tugas Beres!", 
             style: GoogleFonts.poppins(color: _T.textMain, fontSize: 18, fontWeight: FontWeight.w600)
           ),
           const SizedBox(height: 8),
           Text(
-            "Belum ada tugas penjemputan/pengantaran.", 
+            "Istirahat dulu, belum ada jemputan/antaran baru.", 
             style: GoogleFonts.inter(color: _T.textMuted, fontSize: 13)
           ),
         ],

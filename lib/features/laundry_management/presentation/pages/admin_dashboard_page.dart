@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart'; // Tambahan Google Fonts
+import 'package:google_fonts/google_fonts.dart'; 
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../../../../core/providers/auth_provider.dart';
@@ -10,14 +10,14 @@ import '../../../../core/providers/auth_provider.dart';
 //  DESIGN TOKENS (Modern Clean Light Theme)
 // ─────────────────────────────────────────────────────────────
 class _T {
-  static const bg          = Color(0xFFF8FAFC); // Off-white/Slate-50
-  static const surface     = Color(0xFFFFFFFF); // Pure White
-  static const accent      = Color(0xFF2563EB); // Royal Blue
-  static const accentDark  = Color(0xFF1D4ED8); // Darker Blue
-  static const border      = Color(0xFFE2E8F0); // Light Slate
-  static const textMain    = Color(0xFF0F172A); // Very Dark Slate
-  static const textMuted   = Color(0xFF64748B); // Medium Slate
-  static const danger      = Color(0xFFEF4444); // Red
+  static const bg          = Color(0xFFF8FAFC); 
+  static const surface     = Color(0xFFFFFFFF); 
+  static const accent      = Color(0xFF2563EB); 
+  static const accentDark  = Color(0xFF1D4ED8); 
+  static const border      = Color(0xFFE2E8F0); 
+  static const textMain    = Color(0xFF0F172A); 
+  static const textMuted   = Color(0xFF64748B); 
+  static const danger      = Color(0xFFEF4444); 
 }
 
 class AdminDashboardPage extends StatefulWidget {
@@ -71,9 +71,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _fetchDashboardData() async {
     try {
       String? token = await AuthStorage.getToken();
-      // SESUAIKAN IP ADDRESS DENGAN LARAVEL KAMU
+      // SESUAIKAN IP ADDRESS DENGAN LARAVEL KAMU (Atau pakai domain http://192.168.1.9:8000 jika sudah di hosting)
       final response = await http.get(
-        Uri.parse('https://prize-pancake-spore.ngrok-free.dev/api/reports/financial'), 
+        Uri.parse('http://192.168.1.9:8000/api/reports/financial'), 
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
@@ -110,7 +110,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
   }
 
-  // Helper Format Rupiah
   String formatRupiah(dynamic amount) {
     if (amount == null) return "Rp 0";
     final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
@@ -119,8 +118,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   Widget build(BuildContext context) {
+    // Tarik angka pesanan yang sedang diproses dari API untuk dijadikan Notif Bubble
+    final int processCount = dashboardData?['process_count'] ?? 0;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark, // Membuat ikon baterai/sinyal jadi gelap
+      value: SystemUiOverlayStyle.dark, 
       child: Scaffold(
         backgroundColor: _T.bg,
         appBar: AppBar(
@@ -177,18 +179,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     const SizedBox(height: 16),
                     _buildMenuCard(
                       context,
-                      title: "Input Pesanan Baru",
-                      subtitle: "Input berat & foto timbangan",
-                      icon: Icons.add_a_photo_rounded,
-                      color: const Color(0xFF6366F1), // Indigo
-                      onTap: () => Navigator.pushNamed(context, '/add-order'),
-                    ),
-                    _buildMenuCard(
-                      context,
                       title: "Daftar Pesanan",
                       subtitle: "Kelola status & verifikasi bayar",
                       icon: Icons.list_alt_rounded,
-                      color: const Color(0xFFF59E0B), // Amber
+                      color: const Color(0xFFF59E0B), 
+                      badgeCount: processCount, 
                       onTap: () => Navigator.pushNamed(context, '/order-list'),
                     ),
                     _buildMenuCard(
@@ -196,7 +191,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       title: "Cek Tracking Pelanggan",
                       subtitle: "Simulasi tampilan di HP pelanggan",
                       icon: Icons.map_rounded,
-                      color: const Color(0xFF10B981), // Emerald
+                      color: const Color(0xFF10B981), 
                       onTap: () => Navigator.pushNamed(context, '/tracking', arguments: null),
                     ),
 
@@ -218,7 +213,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       title: "Laporan Keuangan",
                       subtitle: "Rekap harian, mingguan, bulanan & tahunan",
                       icon: Icons.bar_chart_rounded,
-                      color: const Color(0xFF14B8A6), // Teal
+                      color: const Color(0xFF14B8A6), 
                       onTap: () => Navigator.pushNamed(context, '/financial-report'),
                     ),
                     _buildMenuCard(
@@ -226,7 +221,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       title: "Kelola Data Kurir",
                       subtitle: "Tambah, hapus, & pantau akun kurir",
                       icon: Icons.motorcycle_rounded, 
-                      color: const Color(0xFFEC4899), // Pink
+                      color: const Color(0xFFEC4899), 
                       onTap: () => Navigator.pushNamed(context, '/manage-couriers'),
                     ),
                     const SizedBox(height: 40),
@@ -241,7 +236,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   }
 
   Widget _buildFinancialSummary() {
-    final double monthlyRevenue = dashboardData?['monthly']?.toDouble() ?? 0.0;
+    double monthlyRevenue = 0.0;
+    final monthlyData = dashboardData?['monthly'];
+
+    if (monthlyData is num) {
+      monthlyRevenue = monthlyData.toDouble();
+    } else if (monthlyData is Map) {
+      monthlyRevenue = (monthlyData['total_revenue'] ?? 0).toDouble();
+    }
+
     final int completedCount = dashboardData?['completed_count'] ?? 0;
     final int processCount = dashboardData?['process_count'] ?? 0;
 
@@ -329,6 +332,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     required String subtitle,
     required IconData icon,
     required Color color,
+    int badgeCount = 0, 
     required VoidCallback onTap,
   }) {
     return Padding(
@@ -390,6 +394,30 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       ],
                     ),
                   ),
+                  if (badgeCount > 0 && !isLoading)
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _T.danger, 
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _T.danger.withOpacity(0.3),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          )
+                        ]
+                      ),
+                      child: Text(
+                        badgeCount > 99 ? '99+' : badgeCount.toString(),
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   Icon(
                     Icons.chevron_right_rounded,
                     color: _T.textMuted.withOpacity(0.5),
