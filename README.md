@@ -56,6 +56,3 @@ php artisan serve --host=0.0.0.0
 1. Pastikan URL Callback di Dashboard Midtrans sudah diatur ke:
    \`https://[URL-NGROK-KAMU]/api/payment/callback\`.
 2. Gunakan Midtrans Payment Simulator untuk simulasi sukses pembayaran.
-
----
-**Developed by Lyra Laundry Team**
