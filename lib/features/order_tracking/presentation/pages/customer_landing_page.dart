@@ -96,7 +96,7 @@ class _CustomerLandingPageState extends State<CustomerLandingPage>
       });
 
       try {
-        final url = Uri.parse('http://192.168.1.9:8000/api/orders/$savedCode');
+        final url = Uri.parse('https://lyra.biz.id/api/orders/$savedCode');
         final response = await http.get(url).timeout(const Duration(seconds: 5));
 
         if (response.statusCode == 200) {

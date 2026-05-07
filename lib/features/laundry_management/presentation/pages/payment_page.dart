@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart'; // Tambahan Google Fonts
+import 'package:google_fonts/google_fonts.dart'; 
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -9,14 +9,14 @@ import 'package:webview_flutter/webview_flutter.dart';
 //  DESIGN TOKENS (Modern Clean Light Theme)
 // ─────────────────────────────────────────────────────────────
 class _T {
-  static const bg          = Color(0xFFF8FAFC); // Off-white/Slate-50
-  static const surface     = Color(0xFFFFFFFF); // Pure White
-  static const accent      = Color(0xFF2563EB); // Royal Blue
-  static const accentDark  = Color(0xFF1D4ED8); // Darker Blue
-  static const border      = Color(0xFFE2E8F0); // Light Slate
-  static const textMain    = Color(0xFF0F172A); // Very Dark Slate
-  static const textMuted   = Color(0xFF64748B); // Medium Slate
-  static const danger      = Color(0xFFEF4444); // Red
+  static const bg          = Color(0xFFF8FAFC); 
+  static const surface     = Color(0xFFFFFFFF); 
+  static const accent      = Color(0xFF2563EB); 
+  static const accentDark  = Color(0xFF1D4ED8); 
+  static const border      = Color(0xFFE2E8F0); 
+  static const textMain    = Color(0xFF0F172A); 
+  static const textMuted   = Color(0xFF64748B); 
+  static const danger      = Color(0xFFEF4444); 
 }
 
 // --- WIDGET WEBVIEW (Untuk Pembayaran di Dalam App) ---
@@ -103,8 +103,10 @@ class _PaymentWebViewPageState extends State<PaymentWebViewPage> {
 class PaymentPage extends StatefulWidget {
   final int orderId;
   final String orderCode;
-  final double weight;
+  final double weight; // Sekarang kita anggap ini "Jumlah" (Bisa Kg/Pcs/Set)
   final String customerName;
+  final String service; // Tambahan: Nama Layanan
+  final double totalPrice; // Tambahan: Total Harga dari Database
 
   const PaymentPage({
     super.key,
@@ -112,6 +114,8 @@ class PaymentPage extends StatefulWidget {
     required this.orderCode,
     required this.weight,
     required this.customerName,
+    required this.service,
+    required this.totalPrice,
   });
 
   @override
@@ -119,12 +123,19 @@ class PaymentPage extends StatefulWidget {
 }
 
 class _PaymentPageState extends State<PaymentPage> {
-  final double _pricePerKg = 7000;
+
+  // Cek Satuan agar rapi di UI
+  String _getUnit() {
+    if (widget.service.contains('Bed Cover') || widget.service.contains('Sprei Aja')) {
+      return 'Pcs';
+    } else if (widget.service == 'Sprei' || widget.service == 'Sprei Single') {
+      return 'Set';
+    }
+    return 'Kg';
+  }
 
   @override
   Widget build(BuildContext context) {
-    double total = widget.weight * _pricePerKg;
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
@@ -156,7 +167,7 @@ class _PaymentPageState extends State<PaymentPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 24),
-                    _buildSummaryCard(total),
+                    _buildSummaryCard(),
                     const SizedBox(height: 32),
                     Text(
                       "Metode Pembayaran",
@@ -168,7 +179,6 @@ class _PaymentPageState extends State<PaymentPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Hanya menampilkan QRIS
                     _buildMethodOption("QRIS", Icons.qr_code_scanner_rounded, "Bayar instan pakai aplikasi bank/e-wallet"),
                     const SizedBox(height: 48),
                     _buildPaymentInstruction(),
@@ -177,14 +187,14 @@ class _PaymentPageState extends State<PaymentPage> {
                 ),
               ),
             ),
-            _buildBottomAction(total),
+            _buildBottomAction(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSummaryCard(double total) {
+  Widget _buildSummaryCard() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -224,7 +234,7 @@ class _PaymentPageState extends State<PaymentPage> {
           ),
           const SizedBox(height: 4),
           Text(
-            "Rp ${total.toStringAsFixed(0)}",
+            "Rp ${widget.totalPrice.toStringAsFixed(0)}",
             style: GoogleFonts.poppins(
               color: Colors.white,
               fontSize: 36,
@@ -242,9 +252,9 @@ class _PaymentPageState extends State<PaymentPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildSmallInfo("Berat", "${widget.weight} Kg"),
+                _buildSmallInfo("Jumlah", "${widget.weight} ${_getUnit()}"),
                 Container(width: 1, height: 24, color: Colors.white.withOpacity(0.2)),
-                _buildSmallInfo("Harga/Kg", "Rp 7.000"),
+                _buildSmallInfo("Layanan", widget.service),
               ],
             ),
           ),
@@ -269,26 +279,16 @@ class _PaymentPageState extends State<PaymentPage> {
       decoration: BoxDecoration(
         color: _T.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: _T.accent,
-          width: 2,
-        ),
+        border: Border.all(color: _T.accent, width: 2),
         boxShadow: [
-          BoxShadow(
-            color: _T.accent.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
+          BoxShadow(color: _T.accent.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
         ],
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _T.accent.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
+            decoration: BoxDecoration(color: _T.accent.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
             child: Icon(icon, color: _T.accent, size: 24),
           ),
           const SizedBox(width: 16),
@@ -312,10 +312,7 @@ class _PaymentPageState extends State<PaymentPage> {
     return Center(
       child: Column(
         children: [
-          Text(
-            "Siapkan aplikasi Bank atau E-Wallet Anda", 
-            style: GoogleFonts.inter(color: _T.textMain, fontSize: 14, fontWeight: FontWeight.w600)
-          ),
+          Text("Siapkan aplikasi Bank atau E-Wallet Anda", style: GoogleFonts.inter(color: _T.textMain, fontSize: 14, fontWeight: FontWeight.w600)),
           const SizedBox(height: 24),
           Container(
             padding: const EdgeInsets.all(24),
@@ -323,36 +320,24 @@ class _PaymentPageState extends State<PaymentPage> {
               color: _T.surface,
               shape: BoxShape.circle,
               border: Border.all(color: _T.border),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)
-              ],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)],
             ),
             child: const Icon(Icons.qr_code_2_rounded, color: _T.border, size: 80),
           ),
           const SizedBox(height: 20),
-          Text(
-            "Gambar QRIS asli akan muncul\nsetelah Anda menekan tombol di bawah", 
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(color: _T.textMuted, fontSize: 12, height: 1.5)
-          ),
+          Text("Gambar QRIS asli akan muncul\nsetelah Anda menekan tombol di bawah", textAlign: TextAlign.center, style: GoogleFonts.inter(color: _T.textMuted, fontSize: 12, height: 1.5)),
         ],
       ),
     );
   }
 
-  Widget _buildBottomAction(double total) {
+  Widget _buildBottomAction() {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
       decoration: BoxDecoration(
         color: _T.surface,
         border: const Border(top: BorderSide(color: _T.border)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
-          )
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, -4))],
       ),
       child: SafeArea(
         child: SizedBox(
@@ -369,17 +354,17 @@ class _PaymentPageState extends State<PaymentPage> {
               showDialog(
                 context: context,
                 barrierDismissible: false,
-                builder: (context) => const Center(
-                  child: CircularProgressIndicator(color: _T.accent)
-                ),
+                builder: (context) => const Center(child: CircularProgressIndicator(color: _T.accent)),
               );
 
               try {
+                // Pastikan alamat IP / URL mengarah ke backend yang benar (Ngrok atau Local IP)
                 final response = await http.post(
-                  Uri.parse('http://192.168.1.9:8000/api/payment/token'),
+                  Uri.parse('https://lyra.biz.id/api/payment/token'),
                   headers: {'Content-Type': 'application/json'},
                   body: jsonEncode({
-                    'total_harga': total.toInt(),
+                    'order_id': widget.orderCode, // <-- SANGAT PENTING untuk Callback Midtrans
+                    'total_harga': widget.totalPrice.toInt(), // <-- Memakai total harga asli dari database
                     'nama': widget.customerName,
                     'email': 'customer@lyra.com',
                   }),
@@ -400,7 +385,7 @@ class _PaymentPageState extends State<PaymentPage> {
                     ),
                   );
                 } else {
-                  throw "Gagal mendapatkan akses pembayaran";
+                  throw "Gagal mendapatkan akses pembayaran: ${response.body}";
                 }
               } catch (e) {
                 if (!mounted) return;
@@ -414,10 +399,7 @@ class _PaymentPageState extends State<PaymentPage> {
                 );
               }
             },
-            child: Text(
-              "BAYAR QRIS SEKARANG", 
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w700, letterSpacing: 1.0)
-            ),
+            child: Text("BAYAR QRIS SEKARANG", style: GoogleFonts.poppins(fontWeight: FontWeight.w700, letterSpacing: 1.0)),
           ),
         ),
       ),

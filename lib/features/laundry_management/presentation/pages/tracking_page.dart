@@ -86,6 +86,15 @@ class _TrackingPageState extends State<TrackingPage> {
     }
   }
 
+  String _getUnit(String serviceName) {
+    if (serviceName.contains('Bed Cover') || serviceName.contains('Sprei Aja')) {
+      return 'Pcs';
+    } else if (serviceName == 'Sprei' || serviceName == 'Sprei Single') {
+      return 'Set';
+    }
+    return 'Kg';
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -128,12 +137,19 @@ class _TrackingPageState extends State<TrackingPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildMainOrderCard(order),
-          
-          // --- TOMBOL MAPS MUNCUL DI BAWAH KARTU RESI ---
           _buildLiveTrackingMapButton(order),
+          
+          const SizedBox(height: 24),
+          
+          // --- TAMBAHAN: BIODATA KURIR DARI DATABASE ---
+          Text("Informasi Kurir", style: GoogleFonts.poppins(color: _T.textMain, fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 16),
+          _buildCourierCard(order),
+          // ---------------------------------------------
 
           const SizedBox(height: 24),
           _buildPhotoWeightCard(order),
+          
           const SizedBox(height: 32),
           Text("Riwayat Proses", style: GoogleFonts.poppins(color: _T.textMain, fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 16),
@@ -143,12 +159,79 @@ class _TrackingPageState extends State<TrackingPage> {
     );
   }
 
-  // --- WIDGET BARU: TOMBOL MENUJU LIVE MAP ---
+  // --- WIDGET BARU UNTUK KARTU KURIR ---
+  Widget _buildCourierCard(OrderModel order) {
+    // Sesuaikan variabel di bawah ini dengan atribut di OrderModel kamu
+    // Misalnya jika namanya order.namaKurir, ubah jadi order.namaKurir
+    final String courierName = order.courierName ?? 'Menunggu Kurir';
+    final String courierPhone = order.courierPhone ?? '-';
+    final String? courierImage = order.courierImage; // Opsional
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _T.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _T.border),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: _T.accent.withOpacity(0.1),
+            backgroundImage: (courierImage != null && courierImage.isNotEmpty)
+                ? NetworkImage(courierImage)
+                : null,
+            child: (courierImage == null || courierImage.isEmpty)
+                ? const Icon(Icons.person_rounded, color: _T.accent, size: 30)
+                : null,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Kurir Bertugas",
+                  style: GoogleFonts.inter(color: _T.textMuted, fontSize: 12, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  courierName,
+                  style: GoogleFonts.poppins(color: _T.textMain, fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                Text(
+                  courierPhone,
+                  style: GoogleFonts.inter(color: _T.textMuted, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          // Tombol Chat (Tidak error karena pakai chat_rounded bawaan Material)
+          if (courierPhone != '-')
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.chat_rounded, color: Color(0xFF22C55E), size: 22),
+                onPressed: () {
+                  // Tambahkan fungsionalitas hubungi kurir (URL Launcher) di sini
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+  // ------------------------------------
+
   Widget _buildLiveTrackingMapButton(OrderModel order) {
     final String mainStatus = order.status.toLowerCase();
-    // Tombol hanya muncul kalau kurir sedang bergerak
-    final bool isCourierMoving = mainStatus.contains('proses jemput') || mainStatus.contains('proses antar');
-
+    final bool isCourierMoving = mainStatus.contains('proses jemput') || 
+                                 mainStatus.contains('proses antar')|| 
+                                 mainStatus.contains('siap jemput');
     if (!isCourierMoving) return const SizedBox.shrink();
 
     return Padding(
@@ -164,19 +247,13 @@ class _TrackingPageState extends State<TrackingPage> {
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(
-                // Lempar kode pesanan ke halaman Map
-                builder: (context) => LiveMapTrackingPage(orderCode: order.orderCode),
-              ),
+              MaterialPageRoute(builder: (context) => LiveMapTrackingPage(orderCode: order.orderCode)),
             );
           },
           icon: const Icon(Icons.map_rounded, color: Colors.white),
-          label: Text(
-            "Lihat Posisi Kurir di Peta", 
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)
-          ),
+          label: Text("Lihat Posisi Kurir di Peta", style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)),
           style: ElevatedButton.styleFrom(
-            backgroundColor: _T.warning, // Pakai warna warning (Orange/Kuning) agar mencolok
+            backgroundColor: _T.warning, 
             padding: const EdgeInsets.symmetric(vertical: 16),
             elevation: 0,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -191,11 +268,7 @@ class _TrackingPageState extends State<TrackingPage> {
 
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: _T.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _T.border),
-      ),
+      decoration: BoxDecoration(color: _T.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: _T.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -235,14 +308,12 @@ class _TrackingPageState extends State<TrackingPage> {
   }
 
   Widget _buildPhotoWeightCard(OrderModel order) {
+    String unit = _getUnit(order.service);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _T.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _T.border),
-      ),
+      decoration: BoxDecoration(color: _T.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: _T.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -250,9 +321,9 @@ class _TrackingPageState extends State<TrackingPage> {
             children: [
               const Icon(Icons.scale_rounded, color: _T.accent, size: 20),
               const SizedBox(width: 8),
-              Text("Bukti Timbangan", style: GoogleFonts.poppins(color: _T.textMain, fontSize: 15, fontWeight: FontWeight.w600)),
+              Text("Bukti / Jumlah", style: GoogleFonts.poppins(color: _T.textMain, fontSize: 15, fontWeight: FontWeight.w600)),
               const Spacer(),
-              Text("${order.weight} Kg", style: GoogleFonts.poppins(color: _T.accent, fontWeight: FontWeight.w700, fontSize: 15)),
+              Text("${order.weight} $unit", style: GoogleFonts.poppins(color: _T.accent, fontWeight: FontWeight.w700, fontSize: 15)),
             ],
           ),
           const SizedBox(height: 16),
@@ -293,7 +364,8 @@ class _TrackingPageState extends State<TrackingPage> {
   }
 
   Widget _buildPaymentAction(OrderModel order) {
-    final double calculatedTotal = order.weight * 7000;
+    final double calculatedTotal = order.totalHarga.toDouble(); 
+
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
       decoration: BoxDecoration(
@@ -317,7 +389,20 @@ class _TrackingPageState extends State<TrackingPage> {
               width: double.infinity,
               height: 55,
               child: ElevatedButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => PaymentPage(orderId: order.id, orderCode: order.orderCode, weight: order.weight, customerName: order.customerName))),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PaymentPage(
+                      orderId: order.id,
+                      orderCode: order.orderCode,
+                      weight: order.weight,
+                      customerName: order.customerName,
+                      service: order.service,          
+                      totalPrice: calculatedTotal,
+                      // Hapus data kurir di sini jika di PaymentPage sudah tidak dibutuhkan lagi
+                    ),
+                  ),
+                ),
                 icon: const Icon(Icons.qr_code_scanner_rounded, color: Colors.white),
                 label: Text("BAYAR SEKARANG", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(backgroundColor: _T.accent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),

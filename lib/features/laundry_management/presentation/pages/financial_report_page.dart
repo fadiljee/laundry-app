@@ -48,7 +48,7 @@ class _FinancialReportPageState extends State<FinancialReportPage> with SingleTi
       
       // ✅ Menggunakan endpoint ASLI bawaan kamu
       final response = await http.get(
-        Uri.parse('http://192.168.1.9:8000/api/reports/financial'), 
+        Uri.parse('https://lyra.biz.id/api/reports/financial'), 
         headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
       );
 

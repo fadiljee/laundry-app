@@ -57,7 +57,7 @@ class _CourierDashboardPageState extends State<CourierDashboardPage> {
 
   Future<void> _fetchData({bool isAutoRefresh = false}) async {
     try {
-      final allOrders = await OrderRemoteDataSource().getAllOrders();
+      final allOrders = await OrderRemoteDataSource().getOrders();
       
       if (!mounted) return;
 

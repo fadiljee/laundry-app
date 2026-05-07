@@ -13,7 +13,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   
   // --- TEMPATKAN KODE FUNGSI DI SINI ---
   Future<void> bayarSekarang() async {
-    final url = Uri.parse('http://192.168.1.9:8000/api/payment/token');
+    final url = Uri.parse('https://lyra.biz.id/api/payment/token');
 
     try {
       final response = await http.post(

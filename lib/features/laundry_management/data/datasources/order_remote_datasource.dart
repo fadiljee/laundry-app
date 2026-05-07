@@ -5,7 +5,7 @@ import '../models/order_model.dart';
 import '../../../../core/providers/auth_provider.dart';
 
 class OrderRemoteDataSource {
-  final String baseUrl = "http://192.168.1.9:8000/api";
+  final String baseUrl = "https://lyra.biz.id/api";
 
   // Helper untuk Header (Biar nggak ngetik token berulang-ulang)
   Future<Map<String, String>> _getHeaders() async {
@@ -16,14 +16,16 @@ class OrderRemoteDataSource {
     };
   }
 
-  // 1. Ambil Semua Order
-  Future<List<OrderModel>> getAllOrders() async {
+  // 1. Ambil Order dengan Pagination (DIPERBARUI)
+  // Menambahkan parameter page, defaultnya 1
+  Future<List<OrderModel>> getOrders({int page = 1}) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/orders'),
+      Uri.parse('$baseUrl/orders?page=$page'), // Tambahkan query parameter page
       headers: await _getHeaders(),
     );
 
     if (response.statusCode == 200) {
+      // Struktur bawaan Laravel paginate() biasanya memiliki array list di dalam key 'data'
       List data = json.decode(response.body)['data'];
       return data.map((item) => OrderModel.fromJson(item)).toList();
     } else {
@@ -83,7 +85,7 @@ class OrderRemoteDataSource {
   Future<void> updateOrderStatus(int orderId, String newStatus) async {
     final response = await http.post(
       Uri.parse('$baseUrl/orders/$orderId/status'),
-      headers: await _getHeaders(), // Langsung pakai helper header
+      headers: await _getHeaders(), 
       body: {
         'status': newStatus,
       },
@@ -93,12 +95,12 @@ class OrderRemoteDataSource {
       throw Exception('Gagal mengupdate status pesanan');
     }
   }
+
   // --- FUNGSI UPDATE BERAT CUCIAN ---
   Future<void> updateOrderWeight(int orderId, String weight) async {
     String? token = await AuthStorage.getToken();
     
-    // Ganti IP/Domain sesuai dengan yang kamu pakai (misal: http://192.168.1.9:8000 atau 192.168.x.x)
-    final url = Uri.parse('http://192.168.1.9:8000/api/orders/$orderId/weight'); 
+    final url = Uri.parse('$baseUrl/orders/$orderId/weight'); 
 
     final response = await http.post(
       url,
@@ -123,8 +125,6 @@ class OrderRemoteDataSource {
     
     request.files.add(await http.MultipartFile.fromPath('image', imageFile.path));
 
-    // PERBAIKAN: Tambahkan timeout maksimal 20 detik. 
-    // Kalau server/ngrok tidak merespons, dia akan otomatis membatalkan dan menampilkan error.
     var streamedResponse = await request.send().timeout(
       const Duration(seconds: 20),
       onTimeout: () {
@@ -136,6 +136,40 @@ class OrderRemoteDataSource {
 
     if (response.statusCode != 200) {
       throw Exception('Gagal mengupload foto timbangan: ${response.body}');
+    }
+  }
+
+  // --- FUNGSI AMBIL DAFTAR KURIR ---
+  Future<List<dynamic>> getAvailableCouriers() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/couriers'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body)['data'];
+    } else {
+      throw Exception('Gagal memuat daftar kurir');
+    }
+  }
+
+  // --- FUNGSI ASSIGN KURIR KE ORDER ---
+  Future<void> assignCourier(int orderId, int courierId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/orders/$orderId/assign-courier'),
+      headers: await _getHeaders(),
+      body: {
+        'courier_id': courierId.toString(),
+      },
+    ).timeout(
+      const Duration(seconds: 15), 
+      onTimeout: () {
+        throw Exception("Server terlalu lama merespons. Proses mungkin sudah berjalan, silakan refresh.");
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Gagal menugaskan kurir');
     }
   }
 }

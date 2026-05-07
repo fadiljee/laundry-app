@@ -5,20 +5,31 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../../../../core/providers/auth_provider.dart';
 
 // ─────────────────────────────────────────────────────────────
-//  DESIGN TOKENS
+//  DESIGN TOKENS (Modern Clean Theme)
 // ─────────────────────────────────────────────────────────────
 class _T {
-  static const bg          = Color(0xFFF8FAFC); 
+  static const bg          = Color(0xFFF1F5F9); 
   static const surface     = Color(0xFFFFFFFF); 
   static const accent      = Color(0xFF2563EB); 
+  static const accentLight = Color(0xFFDBEAFE); 
   static const border      = Color(0xFFE2E8F0); 
   static const textMain    = Color(0xFF0F172A); 
   static const textMuted   = Color(0xFF64748B); 
   static const success     = Color(0xFF10B981); 
   static const danger      = Color(0xFFEF4444); 
+  static const dangerLight = Color(0xFFFEE2E2); 
+
+  static List<BoxShadow> get shadowSm => [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.04),
+      blurRadius: 12,
+      offset: const Offset(0, 4),
+    ),
+  ];
 }
 
 // --- MODEL ---
@@ -26,14 +37,14 @@ class CourierModel {
   final int id;
   final String name;
   final String email;
+  final String? phone; 
   final String? photoUrl;
 
-  CourierModel({required this.id, required this.name, required this.email, this.photoUrl});
+  CourierModel({required this.id, required this.name, required this.email, this.phone, this.photoUrl});
 
   factory CourierModel.fromJson(Map<String, dynamic> json) {
     String? rawUrl = json['photo_url'];
     
-    // Perbaikan: Paksa refresh dengan Timestamp agar Flutter tidak pakai cache lama
     String? finalUrl;
     if (rawUrl != null && rawUrl.isNotEmpty) {
       finalUrl = rawUrl.contains('?') 
@@ -45,6 +56,7 @@ class CourierModel {
       id: json['id'],
       name: json['name'],
       email: json['email'],
+      phone: json['phone'], 
       photoUrl: finalUrl, 
     );
   }
@@ -52,8 +64,7 @@ class CourierModel {
 
 // --- API DATASOURCE ---
 class CourierApi {
-  // PASTIKAN IP INI SESUAI DENGAN IP LAPTOP KAMU SAAT INI
-  static const String baseUrl = "http://192.168.1.9:8000/api";
+  static const String baseUrl = "https://lyra.biz.id/api";
 
   static Future<Map<String, String>> _getHeaders() async {
     String? token = await AuthStorage.getToken();
@@ -73,6 +84,7 @@ class CourierApi {
     int? id,
     required String name,
     required String email,
+    required String phone, 
     required String password,
     File? imageFile,
   }) async {
@@ -88,6 +100,7 @@ class CourierApi {
     
     request.fields['name'] = name;
     request.fields['email'] = email;
+    request.fields['phone'] = phone; 
     
     if (password.isNotEmpty) {
       request.fields['password'] = password;
@@ -128,19 +141,19 @@ class _ManageCouriersPageState extends State<ManageCouriersPage> {
   }
 
   void _refreshData() {
-    final future = CourierApi.getCouriers();
     setState(() {
-      _couriersFuture = future; 
+      _couriersFuture = CourierApi.getCouriers(); 
     });
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.inter(fontWeight: FontWeight.w500)),
+        content: Text(message, style: GoogleFonts.inter(fontWeight: FontWeight.w500, color: Colors.white)),
         backgroundColor: isError ? _T.danger : _T.success,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -149,6 +162,7 @@ class _ManageCouriersPageState extends State<ManageCouriersPage> {
     final isEdit = courier != null;
     final nameCtrl = TextEditingController(text: isEdit ? courier.name : '');
     final emailCtrl = TextEditingController(text: isEdit ? courier.email : '');
+    final phoneCtrl = TextEditingController(text: isEdit ? courier.phone : ''); 
     final passCtrl = TextEditingController();
     File? selectedImage;
     bool isLoading = false;
@@ -160,51 +174,83 @@ class _ManageCouriersPageState extends State<ManageCouriersPage> {
         builder: (context, setDialogState) {
           return AlertDialog(
             backgroundColor: _T.surface,
+            surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            title: Text(isEdit ? "Edit Kurir" : "Tambah Kurir", 
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 18)),
+            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+            contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(isEdit ? "Edit Kurir" : "Tambah Kurir Baru", 
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 20, color: _T.textMain)),
+                const SizedBox(height: 4),
+                Text(isEdit ? "Perbarui informasi kurir di bawah ini" : "Lengkapi form untuk menambah kurir", 
+                    style: GoogleFonts.inter(fontSize: 13, color: _T.textMuted)),
+              ],
+            ),
             content: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  GestureDetector(
-                    onTap: () async {
-                      final picker = ImagePicker();
-                      final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
-                      if (picked != null) {
-                        setDialogState(() => selectedImage = File(picked.path));
-                      }
-                    },
-                    child: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 50,
-                          backgroundColor: _T.bg,
-                          backgroundImage: selectedImage != null 
-                              ? FileImage(selectedImage!) 
-                              : (isEdit && courier.photoUrl != null 
-                                  ? NetworkImage(courier.photoUrl!) 
-                                  : null) as ImageProvider?,
-                          child: (selectedImage == null && (!isEdit || courier.photoUrl == null))
-                              ? const Icon(Icons.camera_alt_rounded, size: 30, color: _T.textMuted)
-                              : null,
-                        ),
-                        Positioned(
-                          bottom: 0, right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(color: _T.accent, shape: BoxShape.circle),
-                            child: const Icon(Icons.edit, size: 14, color: Colors.white),
+                  const SizedBox(height: 16),
+                  // Foto Profil Picker
+                  Center(
+                    child: GestureDetector(
+                      onTap: () async {
+                        final picker = ImagePicker();
+                        final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
+                        if (picked != null) {
+                          setDialogState(() => selectedImage = File(picked.path));
+                        }
+                      },
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: 88,
+                            height: 88,
+                            decoration: BoxDecoration(
+                              color: _T.bg,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: _T.border, width: 2),
+                              image: selectedImage != null 
+                                  ? DecorationImage(image: FileImage(selectedImage!), fit: BoxFit.cover)
+                                  : (isEdit && courier.photoUrl != null 
+                                      ? DecorationImage(image: NetworkImage(courier.photoUrl!), fit: BoxFit.cover) 
+                                      : null),
+                            ),
+                            child: (selectedImage == null && (!isEdit || courier.photoUrl == null))
+                                ? const Icon(Icons.add_a_photo_rounded, size: 28, color: _T.textMuted)
+                                : null,
                           ),
-                        )
-                      ],
+                          Positioned(
+                            bottom: 0, right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: _T.accent, 
+                                shape: BoxShape.circle,
+                                border: Border.all(color: _T.surface, width: 2),
+                              ),
+                              child: const Icon(Icons.edit_rounded, size: 14, color: Colors.white),
+                            ),
+                          )
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
                   _buildTextField(nameCtrl, "Nama Lengkap", Icons.badge_rounded),
-                  const SizedBox(height: 12),
-                  _buildTextField(emailCtrl, "Email", Icons.email_rounded),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+                  _buildTextField(emailCtrl, "Email", Icons.email_rounded, keyboardType: TextInputType.emailAddress),
+                  const SizedBox(height: 16),
+                  _buildTextField(
+                    phoneCtrl, 
+                    "Nomor WA (Cth: 0812...)", 
+                    Icons.phone_android_rounded,
+                    keyboardType: TextInputType.phone
+                  ),
+                  const SizedBox(height: 16),
                   _buildTextField(
                     passCtrl, 
                     isEdit ? "Password (Kosongkan jika tetap)" : "Password", 
@@ -214,39 +260,60 @@ class _ManageCouriersPageState extends State<ManageCouriersPage> {
                 ],
               ),
             ),
+            actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
             actions: [
-              TextButton(
-                onPressed: isLoading ? null : () => Navigator.pop(context), 
-                child: const Text("Batal", style: TextStyle(color: _T.textMuted))
-              ),
-              ElevatedButton(
-                onPressed: isLoading ? null : () async {
-                  if (nameCtrl.text.isEmpty || emailCtrl.text.isEmpty || (!isEdit && passCtrl.text.isEmpty)) {
-                    _showSnackBar("Nama, Email, dan Password wajib diisi!", isError: true);
-                    return;
-                  }
-                  setDialogState(() => isLoading = true);
-                  try {
-                    await CourierApi.saveCourier(
-                      id: courier?.id,
-                      name: nameCtrl.text,
-                      email: emailCtrl.text,
-                      password: passCtrl.text,
-                      imageFile: selectedImage,
-                    );
-                    if (!mounted) return;
-                    Navigator.pop(context);
-                    _refreshData();
-                    _showSnackBar("Data berhasil disimpan");
-                  } catch (e) {
-                    setDialogState(() => isLoading = false);
-                    _showSnackBar(e.toString(), isError: true);
-                  }
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: _T.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                child: isLoading 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Text("Simpan", style: TextStyle(color: Colors.white)),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: isLoading ? null : () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        side: const BorderSide(color: _T.border, width: 1.5),
+                      ),
+                      child: Text("Batal", style: GoogleFonts.inter(color: _T.textMuted, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: isLoading ? null : () async {
+                        if (nameCtrl.text.isEmpty || emailCtrl.text.isEmpty || (!isEdit && passCtrl.text.isEmpty)) {
+                          _showSnackBar("Nama, Email, dan Password wajib diisi!", isError: true);
+                          return;
+                        }
+                        setDialogState(() => isLoading = true);
+                        try {
+                          await CourierApi.saveCourier(
+                            id: courier?.id,
+                            name: nameCtrl.text,
+                            email: emailCtrl.text,
+                            phone: phoneCtrl.text, 
+                            password: passCtrl.text,
+                            imageFile: selectedImage,
+                          );
+                          if (!mounted) return;
+                          Navigator.pop(context);
+                          _refreshData();
+                          _showSnackBar("Data berhasil disimpan");
+                        } catch (e) {
+                          setDialogState(() => isLoading = false);
+                          _showSnackBar(e.toString(), isError: true);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _T.accent, 
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: isLoading 
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                        : Text("Simpan", style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
               ),
             ],
           );
@@ -255,82 +322,209 @@ class _ManageCouriersPageState extends State<ManageCouriersPage> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String hint, IconData icon, {bool obscure = false}) {
+  Widget _buildTextField(TextEditingController controller, String hint, IconData icon, {bool obscure = false, TextInputType keyboardType = TextInputType.text}) {
     return TextField(
       controller: controller,
       obscureText: obscure,
+      keyboardType: keyboardType,
+      style: GoogleFonts.inter(fontSize: 14, color: _T.textMain),
       decoration: InputDecoration(
         hintText: hint,
-        prefixIcon: Icon(icon, size: 18, color: _T.accent),
-        filled: true, fillColor: _T.bg,
-        contentPadding: const EdgeInsets.symmetric(vertical: 16),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+        hintStyle: GoogleFonts.inter(color: _T.textMuted.withOpacity(0.7), fontSize: 13),
+        prefixIcon: Icon(icon, size: 20, color: _T.textMuted),
+        filled: true, 
+        fillColor: _T.bg,
+        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14), 
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _T.accent, width: 1.5),
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _T.bg,
-      appBar: AppBar(
-        backgroundColor: _T.surface, elevation: 0,
-        title: Text("Kelola Kurir", style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: _T.textMain, fontSize: 18)),
-        centerTitle: true,
-      ),
-      body: FutureBuilder<List<CourierModel>>(
-        future: _couriersFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
-          if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("Belum ada kurir"));
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(20),
-            itemCount: snapshot.data!.length,
-            itemBuilder: (context, index) {
-              final courier = snapshot.data![index];
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: _T.surface, borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _T.border),
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.all(12),
-                  leading: _buildAvatar(courier.photoUrl),
-                  title: Text(courier.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  subtitle: Text(courier.email, style: const TextStyle(fontSize: 13)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: _T.bg,
+        appBar: AppBar(
+          backgroundColor: _T.surface, 
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(color: _T.border, height: 1),
+          ),
+          title: Text(
+            "Kelola Kurir", 
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: _T.textMain, fontSize: 18)
+          ),
+          centerTitle: true,
+        ),
+        body: RefreshIndicator(
+          onRefresh: () async => _refreshData(),
+          color: _T.accent,
+          backgroundColor: _T.surface,
+          child: FutureBuilder<List<CourierModel>>(
+            future: _couriersFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: _T.accent));
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text("Error: ${snapshot.error}", style: GoogleFonts.inter(color: _T.danger)));
+              }
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      IconButton(icon: const Icon(Icons.edit_note_rounded, color: _T.accent), onPressed: () => _showCourierDialog(courier: courier)),
-                      IconButton(icon: const Icon(Icons.delete_outline_rounded, color: _T.danger), onPressed: () => _confirmDelete(courier)),
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(color: _T.surface, shape: BoxShape.circle, boxShadow: _T.shadowSm),
+                        child: const Icon(Icons.group_off_rounded, size: 48, color: _T.textMuted),
+                      ),
+                      const SizedBox(height: 16),
+                      Text("Belum ada data kurir", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: _T.textMain)),
+                      Text("Tekan tombol tambah untuk membuat akun kurir", style: GoogleFonts.inter(fontSize: 13, color: _T.textMuted)),
                     ],
                   ),
+                );
+              }
+
+              // Implementasi Animasi Staggered List
+              return AnimationLimiter(
+                child: ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                  padding: const EdgeInsets.all(20),
+                  itemCount: snapshot.data!.length,
+                  itemBuilder: (context, index) {
+                    final courier = snapshot.data![index];
+                    return AnimationConfiguration.staggeredList(
+                      position: index,
+                      duration: const Duration(milliseconds: 500),
+                      child: SlideAnimation(
+                        verticalOffset: 50.0,
+                        child: FadeInAnimation(
+                          child: _buildCourierCard(courier),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               );
             },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showCourierDialog(),
-        backgroundColor: _T.accent,
-        icon: const Icon(Icons.person_add_rounded, color: Colors.white),
-        label: const Text("Tambah Kurir", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () => _showCourierDialog(),
+          backgroundColor: _T.accent,
+          elevation: 4,
+          icon: const Icon(Icons.person_add_rounded, color: Colors.white, size: 20),
+          label: Text("Tambah Kurir", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+        ),
       ),
     );
   }
 
-  // WIDGET AVATAR DENGAN LOADING & ERROR HANDLING
+  // --- KARTU KURIR YANG LEBIH MODERN ---
+  Widget _buildCourierCard(CourierModel courier) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _T.surface, 
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _T.border, width: 0.8),
+        boxShadow: _T.shadowSm,
+      ),
+      child: Row(
+        children: [
+          _buildAvatar(courier.photoUrl),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  courier.name, 
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: _T.textMain),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.email_rounded, size: 14, color: _T.textMuted),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        courier.email, 
+                        style: GoogleFonts.inter(fontSize: 12, color: _T.textMuted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.phone_rounded, size: 14, color: _T.textMuted),
+                    const SizedBox(width: 6),
+                    Text(
+                      courier.phone ?? 'Belum ada nomor', 
+                      style: GoogleFonts.inter(fontSize: 12, color: _T.textMuted),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Action Buttons
+          Column(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.edit_rounded, color: _T.accent, size: 20), 
+                onPressed: () => _showCourierDialog(courier: courier),
+                style: IconButton.styleFrom(backgroundColor: _T.accentLight, padding: const EdgeInsets.all(8)),
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(height: 8),
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded, color: _T.danger, size: 20), 
+                onPressed: () => _confirmDelete(courier),
+                style: IconButton.styleFrom(backgroundColor: _T.dangerLight, padding: const EdgeInsets.all(8)),
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
  Widget _buildAvatar(String? url) {
     return Container(
-      width: 50,
-      height: 50,
+      width: 64,
+      height: 64,
       decoration: BoxDecoration(
-        color: _T.accent.withOpacity(0.1),
+        color: _T.accentLight,
         shape: BoxShape.circle,
+        border: Border.all(color: _T.surface, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: _T.accent.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          )
+        ],
       ),
       child: ClipOval(
         child: url != null
@@ -339,16 +533,11 @@ class _ManageCouriersPageState extends State<ManageCouriersPage> {
                 fit: BoxFit.cover,
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) return child;
-                  return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                  return const Center(child: CircularProgressIndicator(strokeWidth: 2, color: _T.accent));
                 },
-                errorBuilder: (context, error, stackTrace) {
-                  // LOG ERROR KE CONSOLE UNTUK LIHAT KENAPA HILANG
-                  print("Gagal muat gambar: $url");
-                  print("Error detail: $error");
-                  return const Icon(Icons.broken_image_rounded, color: _T.danger);
-                },
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.person_rounded, color: _T.accent, size: 28),
               )
-            : const Icon(Icons.person, color: _T.accent),
+            : const Icon(Icons.person_rounded, color: _T.accent, size: 28),
       ),
     );
   }
@@ -357,10 +546,27 @@ class _ManageCouriersPageState extends State<ManageCouriersPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Hapus Kurir?"),
-        content: Text("Yakin ingin menghapus ${courier.name}? Data ini tidak bisa dikembalikan."),
+        backgroundColor: _T.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(color: _T.dangerLight, shape: BoxShape.circle),
+              child: const Icon(Icons.warning_rounded, color: _T.danger, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Text("Hapus Kurir?", style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 18)),
+          ],
+        ),
+        content: Text("Yakin ingin menghapus akun ${courier.name}? Data ini tidak bisa dikembalikan.", 
+            style: GoogleFonts.inter(color: _T.textMuted, fontSize: 14)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Batal")),
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: Text("Batal", style: GoogleFonts.inter(color: _T.textMuted, fontWeight: FontWeight.w600))
+          ),
           ElevatedButton(
             onPressed: () async {
               try {
@@ -374,8 +580,12 @@ class _ManageCouriersPageState extends State<ManageCouriersPage> {
                 _showSnackBar(e.toString(), isError: true);
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: _T.danger),
-            child: const Text("Hapus", style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _T.danger,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text("Hapus", style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ],
       ),

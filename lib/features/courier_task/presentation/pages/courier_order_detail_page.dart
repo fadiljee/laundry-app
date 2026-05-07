@@ -84,7 +84,7 @@ class _CourierOrderDetailPageState extends State<CourierOrderDetailPage> {
 
           Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
 
-          final url = Uri.parse('http://192.168.1.9:8000/api/orders/${widget.order.orderCode}/update-location');
+          final url = Uri.parse('https://lyra.biz.id/api/orders/${widget.order.orderCode}/update-location');
           
           // --- REVISI PENTING DI SINI ---
           final response = await http.put(
